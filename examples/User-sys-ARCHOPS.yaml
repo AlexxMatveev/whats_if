@@ -1,0 +1,48 @@
+
+# ecosystem-archrepo/models/techgov/products/HUB_USER/systems/User/User-sys-ARCHOPS.yaml
+id: User
+name: User
+desc: |
+  Metrics
+  healthz
+  ...
+productId: HUB_USER  # Предполагаемый
+dataCategories:
+  - Commercial
+status: operational
+pbc: false
+containers:
+  - id: User.Meta
+    name: User Meta
+
+interfaces:
+  - id: User.Meta.INT001
+    name: Metrics
+    desc: Интерфейс для снятия метрик
+    port: 9000
+    tech: Web API/REST
+    uri: user-meta
+    SLO:
+      latency: 0
+  - id: User.Meta.INT002
+    name: healthz
+    desc: liveness health check
+    port: 9000
+    tech: Web API/REST
+    spec: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-a-liveness-http-request
+    uri: user-meta
+    SLO:
+      latency: 0
+  - id: User.Meta.INT003
+    name: GRPC
+    desc: Интерфейс для взаимодействия с сервисом
+    port: 9090
+    tech: Web API/gRPC
+    spec: https://gitlab.services.mts.ru/hub/api-backend/-/tree/master/proto/user-meta/v1
+    uri: user-meta
+    SLO:
+      latency: 0
+
+consumers:
+  - id: Birthdays.BFF_Birthdays
+    interfaceId: User.Meta.INT003

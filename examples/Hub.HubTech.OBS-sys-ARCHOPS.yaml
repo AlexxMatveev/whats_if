@@ -1,0 +1,29 @@
+
+id: Hub.HubTech.OBS
+name: OBS
+desc: Трасировки
+productId: HUB  # Предполагаемый
+dataCategories:
+  - Commercial
+status: operational
+pbc: false
+containers:
+  - id: Hub.HubTech.OBS.OpenTelemetryCollector
+    name: opentelemetry-collector
+
+interfaces:
+  - id: Hub.HubTech.OBS.OpenTelemetryCollector.INT001
+    name: Трасировки
+    desc: Interface
+    port: 4318
+    tech: Web API/REST
+    spec: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-a-liveness-http-request
+    uri: opentelemetry-collector
+    SLO:
+      latency: 0
+
+consumers:
+  - id: Birthdays.BFF_Birthdays
+    interfaceId: Hub.HubTech.OBS.OpenTelemetryCollector.INT001
+  - id: Birthdays.Srv
+    interfaceId: Hub.HubTech.OBS.OpenTelemetryCollector.INT001

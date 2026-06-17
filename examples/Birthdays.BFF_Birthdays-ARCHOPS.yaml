@@ -1,0 +1,79 @@
+
+# ecosystem-archrepo/models/techgov/products/HUB_BIRTHDAYS/systems/Birthdays/containers/Birthdays.BFF_Birthdays-ARCHOPS.yaml
+id: Birthdays.BFF_Birthdays
+name: BFF Birthdays
+desc: |
+  Metrics
+  healthz
+  GRPC
+kind: service
+tech:
+  - name: Go
+    version: ""
+dataCategories:
+  - Commercial
+repo: https://gitlab.services.mts.ru/hub/backend/bff/bff-birthdays
+systemId: Birthdays
+
+interfaces:
+  - id: Birthdays.BFF_Birthdays.INT001
+    name: Metrics
+    desc: Интерфейс для снятия метрик
+    port: 9000
+    tech: Web API/REST
+    spec: https://prometheus.io/docs/instrumenting/exposition_formats/
+    uri: bff-birthdays
+    SLO:
+      latency: 0
+  - id: Birthdays.BFF_Birthdays.INT002
+    name: healthz
+    desc: liveness health check
+    port: 9000
+    tech: Web API/REST
+    spec: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-a-liveness-http-request
+    uri: bff-birthdays
+    SLO:
+      latency: 0
+  - id: Birthdays.BFF_Birthdays.INT003
+    name: GRPC
+    desc: Интерфейс для взаимодействия с сервисом
+    port: 8080
+    tech: Web API/gRPC
+    spec: https://gitlab.services.mts.ru/hub/modules/api/api-birthdays/-/blob/master/specs/birthdays/v1/birthdays.openapi.yaml
+    uri: bff-birthdays
+    SLO:
+      latency: 0
+
+dependencies:
+  - id: Birthdays.Srv.INT003
+    desc: Получение списка дня рождения коллег
+    tech: Web API/gRPC
+    dataflow: push
+    interfaceId: Birthdays.Srv.INT003
+  - id: User.Meta.INT003
+    desc: Управление глобальными настройками профиля
+    tech: Web API/gRPC
+    dataflow: push
+    interfaceId: User.Meta.INT003
+  - id: H8DF3ibaxufhNjcnUX73-1  # SSO порт
+    desc: SSO
+    tech: Web API/REST
+    dataflow: push
+    interfaceId: H8DF3ibaxufhNjcnUX73-1
+  - id: Hub.HubTech.OBS.OpenTelemetryCollector.INT001
+    desc: Передача трассировок
+    tech: Web API/REST
+    dataflow: push
+    interfaceId: Hub.HubTech.OBS.OpenTelemetryCollector.INT001
+  - id: Hub.HubTech.ACL.HRGate.HRData.INT003
+    desc: Получить необходимые данные
+    tech: Web API/gRPC
+    dataflow: both
+    interfaceId: Hub.HubTech.ACL.HRGate.HRData.INT003
+
+roles:
+  - id: Пользователь
+    desc: Использование UI
+    tech: https (UI)
+    dataflow: pull
+    dataobjects: []

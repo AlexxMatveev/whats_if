@@ -1,0 +1,66 @@
+
+# ecosystem-archrepo/models/techgov/products/HUB_BIRTHDAYS/systems/Birthdays/containers/Birthdays.Srv-ARCHOPS.yaml
+id: Birthdays.Srv
+name: Birthdays
+desc: |
+  Metrics
+  healthz
+  GRPC
+kind: service
+tech:
+  - name: Go
+    version: ""
+dataCategories:
+  - Commercial
+repo: https://gitlab.services.mts.ru/hub/backend/services/birthdays
+systemId: Birthdays
+
+interfaces:
+  - id: Birthdays.Srv.INT001
+    name: Metrics
+    desc: Интерфейс для снятия метрик
+    port: 9000
+    tech: Web API/REST
+    spec: https://prometheus.io/docs/instrumenting/exposition_formats/
+    uri: birthdays
+    SLO:
+      latency: 0
+  - id: Birthdays.Srv.INT002
+    name: healthz
+    desc: liveness health check
+    port: 9000
+    tech: Web API/REST
+    spec: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-a-liveness-http-request
+    uri: birthdays
+    SLO:
+      latency: 0
+  - id: Birthdays.Srv.INT003
+    name: GRPC
+    desc: Интерфейс для взаимодействия с сервисом
+    port: 9090
+    tech: Web API/gRPC
+    spec: https://gitlab.services.mts.ru/hub/api-backend/-/tree/master/proto/birthdays/v1
+    uri: birthdays
+    SLO:
+      latency: 0
+
+dependencies:
+  - id: Hub.HubTech.PostgresqlMain.INT001
+    desc: CRUD над настройками микрофронтов POSTGRE_DB=birthdays POSTGRE_USER=tasks POSTGRE_SCHEMA=birthdays
+    tech: DB/SQL
+    dataflow: both
+    interfaceId: Hub.HubTech.PostgresqlMain.INT001
+  - id: H8DF3ibaxufhNjcnUX73-1  # SSO порт
+    desc: SSO
+    tech: Web API/REST
+    dataflow: push
+    interfaceId: H8DF3ibaxufhNjcnUX73-1
+  - id: Hub.HubTech.OBS.OpenTelemetryCollector.INT001
+    desc: Передача трассировок
+    tech: Web API/REST
+    dataflow: push
+    interfaceId: Hub.HubTech.OBS.OpenTelemetryCollector.INT001
+
+consumers:
+  - id: Birthdays.BFF_Birthdays
+    interfaceId: Birthdays.Srv.INT003

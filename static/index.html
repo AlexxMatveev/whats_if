@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Whats If — Анализ сценариев</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo">
+      <span class="logo-icon">?</span>
+      <span class="logo-text">Whats If</span>
+    </div>
+    <p class="subtitle">Анализ «что если» для распределённых систем</p>
+
+    <div class="panel-section">
+      <h3>⚙️ Конфигурация системы</h3>
+
+      <div class="field">
+        <label for="numApps">Количество приложений</label>
+        <input type="range" id="numApps" min="1" max="8" value="4">
+        <div class="field-value"><span id="numAppsVal">4</span></div>
+      </div>
+
+      <div class="field">
+        <label for="contsPerApp">Контейнеров на приложение</label>
+        <input type="range" id="contsPerApp" min="1" max="6" value="2">
+        <div class="field-value"><span id="contsPerAppVal">2</span></div>
+      </div>
+
+      <div class="field">
+        <label for="numClients">Количество клиентов</label>
+        <input type="range" id="numClients" min="1000" max="500000" value="10000" step="1000">
+        <div class="field-value"><span id="numClientsVal">10 000</span></div>
+      </div>
+
+      <div class="field">
+        <label for="rps">RPS (запросов/сек)</label>
+        <input type="range" id="rps" min="10" max="2000" value="100" step="10">
+        <div class="field-value"><span id="rpsVal">100</span></div>
+      </div>
+
+      <div class="field">
+        <label for="dbLatency">Задержка БД (ms)</label>
+        <input type="range" id="dbLatency" min="1" max="50" value="5" step="1">
+        <div class="field-value"><span id="dbLatencyVal">5</span> ms</div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h3>🧪 Сценарий</h3>
+      <p class="section-hint">Выберите, что проверить:</p>
+      <div id="scenarios" class="scenario-list"></div>
+    </div>
+
+    <button id="analyzeBtn" class="btn-primary">🚀 Запустить анализ</button>
+  </aside>
+
+  <main class="main">
+    <div class="tab-bar">
+      <button class="tab active" data-tab="analysis">📊 Анализ</button>
+      <button class="tab" data-tab="architecture">🏗️ Архитектура</button>
+    </div>
+
+    <div id="tabAnalysis" class="tab-panel active">
+      <div class="top-bar">
+        <div class="top-bar-left">
+          <span class="scenario-badge" id="scenarioBadge">Базовый</span>
+          <span class="scenario-label" id="scenarioLabel">Базовое состояние системы</span>
+        </div>
+        <div class="last-updated" id="lastUpdated"></div>
+      </div>
+
+      <div class="summary-cards" id="summaryCards">
+        <div class="card summary-card healthy">
+          <div class="card-icon">✓</div>
+          <div class="card-body">
+            <div class="card-value" id="healthyCount">0</div>
+            <div class="card-label">Здоровы</div>
+          </div>
+        </div>
+        <div class="card summary-card warning">
+          <div class="card-icon">⚠</div>
+          <div class="card-body">
+            <div class="card-value" id="warningCount">0</div>
+            <div class="card-label">Предупреждения</div>
+          </div>
+        </div>
+        <div class="card summary-card critical">
+          <div class="card-icon">✕</div>
+          <div class="card-body">
+            <div class="card-value" id="criticalCount">0</div>
+            <div class="card-label">Критично</div>
+          </div>
+        </div>
+        <div class="card summary-card info">
+          <div class="card-icon">⚡</div>
+          <div class="card-body">
+            <div class="card-value" id="avgLatency">0</div>
+            <div class="card-label">Ср. задержка (ms)</div>
+          </div>
+        </div>
+        <div class="card summary-card info">
+          <div class="card-icon">🔥</div>
+          <div class="card-body">
+            <div class="card-value" id="maxCpu">0<span class="unit">%</span></div>
+            <div class="card-label">Макс. CPU</div>
+          </div>
+        </div>
+        <div class="card summary-card info">
+          <div class="card-icon">📊</div>
+          <div class="card-body">
+            <div class="card-value" id="totalRps">0</div>
+            <div class="card-label">Общий RPS</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="description-box" id="descriptionBox">
+        <div class="desc-text" id="descText">Настройте конфигурацию и выберите сценарий, затем нажмите «Запустить анализ».</div>
+      </div>
+
+      <div class="rec-collapse" id="recBox" style="display:none">
+        <div class="rec-toggle" id="recToggle">
+          <span>💡 Рекомендации</span>
+          <span class="rec-count" id="recCount">0</span>
+          <span class="rec-arrow">▶</span>
+        </div>
+        <div class="rec-body" id="recBody">
+          <div class="rec-list" id="recList"></div>
+        </div>
+      </div>
+
+      <div class="results-panel" id="resultsPanel" style="display:none">
+        <div class="results-title" id="resultsTitle"></div>
+        <div class="results-verdict" id="resultsVerdict"></div>
+        <div class="results-what" id="resultsWhat"></div>
+        <div class="results-limits" id="resultsLimits"></div>
+      </div>
+
+      <div class="graph-container">
+        <div id="graph"></div>
+      </div>
+    </div>
+
+    <div id="tabArchitecture" class="tab-panel">
+      <div class="top-bar">
+        <div class="top-bar-left">
+          <span class="scenario-label">🏗️ Архитектура системы (BI_3049)</span>
+        </div>
+        <div class="last-updated" id="archUpdated"></div>
+        <button class="btn-primary" id="archAnalyzeAllBtn" style="font-size:12px;padding:4px 10px;margin-left:8px">🚀 Анализировать всё</button>
+      </div>
+      <div class="graph-container" style="position:relative">
+        <div id="archGraph"></div>
+        <div id="archInfo" class="arch-info" style="display:none">
+          <div class="arch-info-header">
+            <span id="archInfoTitle">Компонент</span>
+            <button class="arch-info-close" id="archInfoClose">✕</button>
+          </div>
+          <div class="arch-info-body" id="archInfoBody"></div>
+          <button class="btn-primary" id="archAnalyzeBtn" style="margin-top:8px;font-size:12px;padding:8px">📊 Анализировать этот компонент</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="modalTitle">Детали компонента</span>
+      <button class="modal-close" id="modalClose">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

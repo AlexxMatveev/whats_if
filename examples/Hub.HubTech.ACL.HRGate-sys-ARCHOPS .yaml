@@ -1,0 +1,48 @@
+
+id: Hub.HubTech.ACL.HRGate
+name: ACL HRGate
+desc: |
+  Metrics
+  healthz
+  ...
+productId: HUB  # Предполагаемый
+dataCategories:
+  - Public
+status: operational
+pbc: false
+containers:
+  - id: Hub.HubTech.ACL.HRGate.HRData
+    name: HRData
+
+interfaces:
+  - id: Hub.HubTech.ACL.HRGate.HRData.INT001
+    name: Metrics
+    desc: Интерфейс для снятия метрик
+    port: 9000
+    tech: Web API/REST
+    spec: https://prometheus.io/docs/instrumenting/exposition_formats/
+    uri: suggestions
+    SLO:
+      latency: 0
+  - id: Hub.HubTech.ACL.HRGate.HRData.INT002
+    name: healthz
+    desc: liveness health check
+    port: 9000
+    tech: Web API/REST
+    spec: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-a-liveness-http-request
+    uri: suggestions
+    SLO:
+      latency: 0
+  - id: Hub.HubTech.ACL.HRGate.HRData.INT003
+    name: api
+    desc: GRPC API
+    port: 9090
+    tech: Web API/gRPC
+    spec: https://gitlab.services.mts.ru/hub/api-backend/-/tree/master/proto/hr_data/v1
+    uri: suggestions
+    SLO:
+      latency: 0
+
+consumers:
+  - id: Birthdays.BFF_Birthdays
+    interfaceId: Hub.HubTech.ACL.HRGate.HRData.INT003

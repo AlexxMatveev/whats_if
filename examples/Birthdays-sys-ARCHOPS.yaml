@@ -1,0 +1,57 @@
+
+# ecosystem-archrepo/models/techgov/products/HUB_BIRTHDAYS/systems/Birthdays/Birthdays-sys-ARCHOPS.yaml
+id: Birthdays
+name: Birthdays
+desc: |
+  Metrics
+  healthz
+  ...
+productId: HUB_BIRTHDAYS  # Предполагаемый productId, должен быть указан в контексте
+dataCategories:
+  - Commercial
+status: operational
+pbc: false
+containers:
+  - id: Birthdays.BFF_Birthdays
+    name: BFF Birthdays
+  - id: Birthdays.Srv
+    name: Birthdays
+
+roles:
+  - id: DevOps
+    desc: Обслуживание системы
+    tech: k8s (CLI) с правами admin
+    dataflow: push
+    dataobjects: []
+  - id: Тех.поддержка
+    desc: Обслуживание системы
+    tech: k8s (CLI) c правами viewer
+    dataflow: push
+    dataobjects: []
+  - id: Пользователь
+    desc: Использование UI
+    tech: https (UI)
+    dataflow: pull
+    dataobjects: []
+
+dependencies:
+  - id: User.Meta.INT003
+    desc: Управление глобальными настройками профиля
+    tech: Web API/gRPC
+    dataflow: push
+    interfaceId: User.Meta.INT003
+  - id: H8DF3ibaxufhNjcnUX73-1  # SSO порт
+    desc: SSO
+    tech: Web API/REST
+    dataflow: push
+    interfaceId: H8DF3ibaxufhNjcnUX73-1
+  - id: Hub.HubTech.OBS.OpenTelemetryCollector.INT001
+    desc: Передача трассировок
+    tech: Web API/REST
+    dataflow: push
+    interfaceId: Hub.HubTech.OBS.OpenTelemetryCollector.INT001
+  - id: Hub.HubTech.ACL.HRGate.HRData.INT003
+    desc: Получить необходимые данные
+    tech: Web API/gRPC
+    dataflow: both
+    interfaceId: Hub.HubTech.ACL.HRGate.HRData.INT003

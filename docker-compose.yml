@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  whats-if:
+    build: .
+    container_name: whats-if
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./examples:/app/examples
+    environment:
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8000
+    restart: unless-stopped

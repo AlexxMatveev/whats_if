@@ -1,0 +1,55 @@
+
+id: Hub.HubTech.ACL.HRGate.HRData
+name: HRData
+desc: |
+  Metrics
+  healthz
+  api
+kind: service
+tech:
+  - name: Go
+    version: ""
+dataCategories:
+  - Commercial
+repo: https://gitlab.services.mts.ru/hub/hr-data
+systemId: Hub.HubTech.ACL.HRGate
+
+interfaces:
+  - id: Hub.HubTech.ACL.HRGate.HRData.INT001
+    name: Metrics
+    desc: Интерфейс для снятия метрик
+    port: 9000
+    tech: Web API/REST
+    spec: https://prometheus.io/docs/instrumenting/exposition_formats/
+    uri: suggestions
+    SLO:
+      latency: 0
+  - id: Hub.HubTech.ACL.HRGate.HRData.INT002
+    name: healthz
+    desc: liveness health check
+    port: 9000
+    tech: Web API/REST
+    spec: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-a-liveness-http-request
+    uri: suggestions
+    SLO:
+      latency: 0
+  - id: Hub.HubTech.ACL.HRGate.HRData.INT003
+    name: api
+    desc: GRPC API
+    port: 9090
+    tech: Web API/gRPC
+    spec: https://gitlab.services.mts.ru/hub/api-backend/-/tree/master/proto/hr_data/v1
+    uri: suggestions
+    SLO:
+      latency: 0
+
+dependencies:
+  - id: Hub.HubTech.MongoHeadless.INT001
+    desc: Кеш MONGO_DB=hr-data MONGO_USER=hr-data
+    tech: DB
+    dataflow: push
+    interfaceId: Hub.HubTech.MongoHeadless.INT001
+
+consumers:
+  - id: Birthdays.BFF_Birthdays
+    interfaceId: Hub.HubTech.ACL.HRGate.HRData.INT003

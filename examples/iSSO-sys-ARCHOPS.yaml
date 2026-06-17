@@ -1,0 +1,27 @@
+
+id: iSSO
+name: IGA.SSO
+desc: Система управления идентификацией и доступом
+productId: IGA_SSO  # Предполагаемый
+dataCategories:
+  - Public
+status: operational
+pbc: false
+is_external: true
+
+interfaces:
+  - id: H8DF3ibaxufhNjcnUX73-1
+    name: REST
+    desc: Интерфейс для взаимодействия с сервисом
+    port: 8080
+    tech: Web API/REST
+    spec: https://www.keycloak.org/docs-api/latest/rest-api/openapi.yaml
+    uri: https://isso.mts.ru/auth/realms/mts
+    SLO:
+      latency: 0
+
+consumers:
+  - id: Birthdays.BFF_Birthdays
+    interfaceId: H8DF3ibaxufhNjcnUX73-1
+  - id: Birthdays.Srv
+    interfaceId: H8DF3ibaxufhNjcnUX73-1

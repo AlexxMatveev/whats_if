@@ -1,0 +1,31 @@
+
+# ecosystem-archrepo/models/techgov/products/HUB/systems/Hub.HubTech/Hub.HubTech-sys-ARCHOPS.yaml
+id: Hub.HubTech
+name: Tech
+desc: |
+  HTTP Api
+  GRPC Api
+  ...
+productId: HUB  # Предполагаемый
+dataCategories:
+  - Commercial
+status: operational
+pbc: false
+containers:
+  - id: Hub.HubTech.PostgresqlMain
+    name: postgresql-main
+
+interfaces:
+  - id: Hub.HubTech.PostgresqlMain.INT001
+    name: Подключение к базе
+    desc: Interface
+    port: 5432
+    tech: DB/SQL
+    spec: https://
+    uri: https://
+    SLO:
+      latency: 0
+
+consumers:
+  - id: Birthdays.Srv
+    interfaceId: Hub.HubTech.PostgresqlMain.INT001
