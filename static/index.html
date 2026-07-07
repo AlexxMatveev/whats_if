@@ -15,6 +15,11 @@
       <span class="logo-text">Whats If</span>
     </div>
     <p class="subtitle">Анализ «что если» для распределённых систем</p>
+    <div style="margin-top:-6px;margin-bottom:4px">
+      <a href="/static/interfaces.html" style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;color:var(--accent);text-decoration:none;transition:all 0.15s;background:var(--bg-card)" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <span>📱</span> Web vs Mobile <span style="font-size:9px;color:var(--text-muted);margin-left:auto">→</span>
+      </a>
+    </div>
 
     <div class="panel-section">
       <h3>⚙️ Конфигурация системы</h3>
@@ -56,6 +61,62 @@
       <div id="scenarios" class="scenario-list"></div>
     </div>
 
+    <div class="panel-section">
+      <div class="locust-toggle" id="locustToggle">
+        <label class="locust-toggle-label">
+          <input type="checkbox" id="locustCheck"> ⚡ Реальный тест (Locust)
+        </label>
+      </div>
+
+      <div id="locustConfig" style="display:none;margin-top:8px">
+        <div class="field">
+          <label for="locustUrl">Target URL</label>
+          <input type="text" id="locustUrl" class="locust-input" value="http://localhost:8000">
+        </div>
+
+        <div class="field">
+          <label for="locustUsers">Пользователи</label>
+          <input type="range" id="locustUsers" min="1" max="100" value="10">
+          <div class="field-value"><span id="locustUsersVal">10</span></div>
+        </div>
+
+        <div class="field">
+          <label for="locustSpawnRate">Скорость запуска (users/sec)</label>
+          <input type="range" id="locustSpawnRate" min="1" max="20" value="2">
+          <div class="field-value"><span id="locustSpawnRateVal">2</span></div>
+        </div>
+
+        <div class="field">
+          <label for="locustDuration">Длительность (сек)</label>
+          <input type="range" id="locustDuration" min="5" max="300" value="15">
+          <div class="field-value"><span id="locustDurationVal">15</span></div>
+        </div>
+
+        <div class="field" style="flex-direction:column;align-items:stretch">
+          <label>Endpoint'ы (каждый с новой строки)</label>
+          <textarea id="locustEndpoints" class="locust-input" rows="3">/api/scenarios</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section" id="manifestSection">
+      <div class="manifest-toggle">
+        <label class="manifest-toggle-label">
+          <input type="checkbox" id="manifestCheck"> 📂 K8s манифесты
+        </label>
+      </div>
+      <div id="manifestConfig" style="display:none;margin-top:8px">
+        <div class="field" style="flex-direction:column;align-items:stretch">
+          <label>Загрузите YAML-файлы (deployment, hpa, service, ingress)</label>
+          <input type="file" id="manifestFiles" multiple accept=".yaml,.yml" style="font-size:11px;color:var(--text-secondary)">
+        </div>
+        <div id="manifestResult" style="display:none;margin-top:8px">
+          <div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">Распознано:</div>
+          <div id="manifestAppList" style="font-size:11px"></div>
+        </div>
+      </div>
+    </div>
+
     <button id="analyzeBtn" class="btn-primary">🚀 Запустить анализ</button>
   </aside>
 
@@ -63,6 +124,7 @@
     <div class="tab-bar">
       <button class="tab active" data-tab="analysis">📊 Анализ</button>
       <button class="tab" data-tab="architecture">🏗️ Архитектура</button>
+      <button class="tab" data-tab="assertions">🔍 Проверки</button>
     </div>
 
     <div id="tabAnalysis" class="tab-panel active">
@@ -119,6 +181,15 @@
         </div>
       </div>
 
+      <div class="assert-summary" id="assertMainSummary" style="display:none">
+        <div class="assert-summary-label">🔍 Проверки</div>
+        <div class="assert-summary-badges">
+          <span class="as-badge pass" id="mainAssertPass">0 ✓</span>
+          <span class="as-badge fail" id="mainAssertFail">0 ✗</span>
+          <span class="as-badge total" id="mainAssertTotal">0</span>
+        </div>
+      </div>
+
       <div class="description-box" id="descriptionBox">
         <div class="desc-text" id="descText">Настройте конфигурацию и выберите сценарий, затем нажмите «Запустить анализ».</div>
       </div>
@@ -166,6 +237,73 @@
         </div>
       </div>
     </div>
+
+    <div id="tabAssertions" class="tab-panel">
+      <div class="assertions-layout">
+        <aside class="assertions-sidebar">
+          <h3 class="assertions-sidebar-title">🔍 Проверки</h3>
+          <p class="assertions-sidebar-hint">Выберите проверки для запуска:</p>
+          <div class="assertions-rules" id="assertionsRules"></div>
+          <div class="assertions-actions">
+            <button class="btn-secondary" id="addJsr223Btn">+ 📜 JSR223</button>
+            <button class="btn-primary" id="runAssertionsBtn">▶ Запустить проверки</button>
+          </div>
+          <div class="assertions-sidebar-stats">
+            <div class="as-stat">
+              <span class="as-stat-value pass" id="assertPassCount">0</span>
+              <span class="as-stat-label">Пройдено</span>
+            </div>
+            <div class="as-stat">
+              <span class="as-stat-value fail" id="assertFailCount">0</span>
+              <span class="as-stat-label">Провалено</span>
+            </div>
+            <div class="as-stat">
+              <span class="as-stat-value total" id="assertTotalCount">0</span>
+              <span class="as-stat-label">Всего</span>
+            </div>
+          </div>
+          <button class="btn-secondary" id="showDetailsBtn" style="margin-top:8px;width:100%;font-size:11px">📋 Детали проверок</button>
+        </aside>
+        <main class="assertions-main">
+          <div class="top-bar">
+            <div class="top-bar-left">
+              <span class="scenario-label">🔍 Результаты проверок</span>
+            </div>
+            <div class="top-bar-right">
+              <div class="view-toggle" id="assertViewToggle">
+                <button class="view-toggle-btn active" data-view="table">📋 Таблица</button>
+                <button class="view-toggle-btn" data-view="tree">🌳 Дерево</button>
+              </div>
+              <div class="last-updated" id="assertLastUpdated"></div>
+            </div>
+          </div>
+          <div class="assertions-results" id="assertionsResults" style="display:none">
+            <div class="assertions-results-table-wrapper" id="assertTableWrap">
+              <table class="assertions-table" id="assertionsTable">
+                <thead>
+                  <tr>
+                    <th>Компонент</th>
+                    <th>Проверка</th>
+                    <th>Тип</th>
+                    <th>Ожидание</th>
+                    <th>Факт</th>
+                    <th>Статус</th>
+                  </tr>
+                </thead>
+                <tbody id="assertionsTableBody"></tbody>
+              </table>
+            </div>
+            <div class="assertions-results-tree" id="assertTreeWrap" style="display:none">
+              <div class="assert-tree" id="assertTree"></div>
+            </div>
+          </div>
+          <div class="graph-container">
+            <div id="assertionGraph"></div>
+          </div>
+        </main>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -176,6 +314,26 @@
       <button class="modal-close" id="modalClose">✕</button>
     </div>
     <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ruleModal">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <span id="ruleModalTitle">Настройка правила</span>
+      <button class="modal-close" id="ruleModalClose">✕</button>
+    </div>
+    <div class="modal-body" id="ruleModalBody"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="detailsModal">
+  <div class="modal modal-wide modal-tall">
+    <div class="modal-header">
+      <span>📋 Детали проверок</span>
+      <button class="modal-close" id="detailsModalClose">✕</button>
+    </div>
+    <div class="modal-body" id="detailsModalBody"></div>
   </div>
 </div>
 

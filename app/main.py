@@ -6,6 +6,8 @@ from fastapi.responses import RedirectResponse
 from app.routers.analysis import router as analysis_router
 from app.routers.diagram import router as diagram_router
 from app.routers.architecture import router as architecture_router
+from app.routers.locust_test import router as locust_router
+from app.routers.manifest import router as manifest_router
 
 app = FastAPI(
     title="Whats If — Анализ сценариев",
@@ -24,6 +26,8 @@ app.add_middleware(
 app.include_router(analysis_router)
 app.include_router(diagram_router)
 app.include_router(architecture_router)
+app.include_router(locust_router)
+app.include_router(manifest_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

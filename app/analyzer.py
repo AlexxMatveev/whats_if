@@ -48,6 +48,64 @@ def _limit_status(current: float, normal: float, max_cap: float) -> str:
     return "healthy"
 
 
+def _propagate_degradation(components: List[ComponentMetrics], edges: List[EdgeInfo]):
+    fwd: Dict[str, List[str]] = {}
+    bwd: Dict[str, List[str]] = {}
+    for e in edges:
+        fwd.setdefault(e.source, []).append(e.target)
+        bwd.setdefault(e.target, []).append(e.source)
+    for c in components:
+        fwd.setdefault(c.id, [])
+        bwd.setdefault(c.id, [])
+
+    def _bfs(start_ids, neighbors_fn, from_status, to_status):
+        visited = set(start_ids)
+        queue = list(start_ids)
+        while queue:
+            nid = queue.pop(0)
+            for nb in neighbors_fn(nid):
+                for comp in components:
+                    if comp.id == nb and comp.status == from_status:
+                        comp.status = to_status
+                        comp.propagated = True
+                if nb not in visited:
+                    visited.add(nb)
+                    queue.append(nb)
+
+    def _bwd_one_level(nids, neighbors_fn, escalate=False):
+        for nid in nids:
+            for nb in neighbors_fn(nid):
+                for comp in components:
+                    if comp.id == nb:
+                        if comp.status == "healthy":
+                            comp.status = "warning"
+                            comp.propagated = True
+                        elif comp.status == "warning" and escalate:
+                            comp.status = "critical"
+                            comp.propagated = True
+
+    # Save original statuses before any propagation
+    orig_statuses = {c.id: c.status for c in components}
+
+    # Phase 1: backward propagation (one level, immediate predecessors)
+    crit_ids = [c.id for c in components if c.status == "critical"]
+    _bwd_one_level(crit_ids, lambda n: bwd.get(n, []), escalate=True)
+
+    warn_ids = [c.id for c in components if c.status == "warning"]
+    _bwd_one_level(warn_ids, lambda n: bwd.get(n, []), escalate=False)
+
+    # Phase 2: forward propagation from all degraded components
+    all_degraded = [c.id for c in components if c.status in ("critical", "warning")]
+    _bfs(all_degraded, lambda n: fwd.get(n, []), "healthy", "warning")
+
+    # Update edge statuses to match source component
+    for e in edges:
+        for c in components:
+            if c.id == e.source:
+                e.status = c.status
+                break
+
+
 def analyze(config: SystemConfig, scenario: Scenario) -> AnalysisResult:
     sname = scenario.name
     sp = scenario.params
@@ -116,7 +174,7 @@ def analyze(config: SystemConfig, scenario: Scenario) -> AnalysisResult:
         load_percent=_cap_load(lb_load),
     ))
 
-    # ── Cascade: if LB is saturated, Gateway takes extra ──
+        # ── Cascade: if LB is saturated, Gateway takes extra ──
     lb_cascade = 0
     if lb_status == "critical":
         lb_cascade = 15  # extra % load on Gateway
@@ -301,29 +359,57 @@ def analyze(config: SystemConfig, scenario: Scenario) -> AnalysisResult:
             add_edge(f"app_{j}", db_id, db_name[:6], db_lat, db_status)
 
     # ═══════════════════════════════════════════════════════════
-    #  6. CASCADING: chain-wide propagation
+    #  6. EXTERNAL PRODUCT (CRM Integration)
     # ═══════════════════════════════════════════════════════════
-    # If DB is critical → all apps that touch it get worse
-    any_db_critical = any(c.status == "critical" for c in components if c.type == "database")
-    if any_db_critical:
-        for comp in components:
-            if comp.type == "app" and comp.status == "healthy":
-                comp.status = "warning"
-                comp.latency_ms = round(min(500, comp.latency_ms * 1.8), 1)
-                comp.error_rate = round(min(comp.error_rate + 3, 20), 2)
+    ext_id = "ext_crm"
+    ext_name = "Внешний CRM"
 
-    # If app is critical → its containers scale up error / latency (already handled above)
+    # Find container_0_0 to connect external CRM
+    container_0_status = "healthy"
+    container_0_metrics = {"lat": 0, "rps": 0, "err": 0, "cpu": 0}
+    for c in components:
+        if c.id == "container_0_0":
+            container_0_status = c.status
+            container_0_metrics = {"lat": c.latency_ms, "rps": c.rps,
+                                   "err": c.error_rate, "cpu": c.cpu_percent}
+            break
 
-    # If Gateway is critical AND any app is critical → SYSTEM EDGE IS DOWN
-    gw_down = gw_status == "critical"
-    any_app_critical = any(c.status == "critical" for c in components if c.type == "app")
-    if gw_down and any_app_critical:
-        for comp in components:
-            if comp.type in ("app", "container") and comp.status == "warning":
-                comp.status = "critical"
+    ext_crm_latency = 20 + container_0_metrics["lat"] * 0.6 + container_0_metrics["err"] * 1.5
+    ext_crm_error = container_0_metrics["err"] * 0.5 + (5 if container_0_status == "critical" else
+                                                        1 if container_0_status == "warning" else 0.1)
+    ext_status = container_0_status  # mirror container health
+
+    ext_load = _cap_load(container_0_metrics["cpu"] * 0.8 + (30 if container_0_status == "critical" else
+                                                              10 if container_0_status == "warning" else 0))
+
+    components.append(ComponentMetrics(
+        id=ext_id, label=f"{ext_name}\n(via Auth-1)", type="external",
+        cpu_percent=0,
+        memory_percent=0,
+        latency_ms=round(min(500, ext_crm_latency), 1),
+        rps=round(container_0_metrics["rps"] * 0.3, 1),
+        error_rate=round(min(20, ext_crm_error), 2),
+        status=ext_status,
+        load_percent=ext_load,
+    ))
+    add_edge("container_0_0", ext_id, "API call", container_0_metrics["rps"] * 0.3, ext_status)
+
+    # ── 7. External product explanation for results panel ──
+    ext_verdict = ""
+    if ext_status == "critical":
+        ext_verdict = "❌ Внешний CRM недоступен — канал связи с Auth-1 оборван, клиенты CRM не могут авторизоваться"
+    elif ext_status == "warning":
+        ext_verdict = "⚠️ Внешний CRM работает с задержками — из-за высокой нагрузки на Auth-1 время ответа CRM выросло"
+    else:
+        ext_verdict = "✅ Внешний CRM стабилен — канал связи с Auth-1 в норме"
 
     # ═══════════════════════════════════════════════════════════
-    #  7. SUMMARY
+    #  8. CASCADING: chain-wide propagation through dependency graph
+    # ═══════════════════════════════════════════════════════════
+    _propagate_degradation(components, edges)
+
+    # ═══════════════════════════════════════════════════════════
+    #  9. SUMMARY
     # ═══════════════════════════════════════════════════════════
     healthy_c = sum(1 for c in components if c.status == "healthy")
     warning_c = sum(1 for c in components if c.status == "warning")
@@ -352,6 +438,8 @@ def analyze(config: SystemConfig, scenario: Scenario) -> AnalysisResult:
         verdict = "⚡ СИСТЕМА ПОД НАГРУЗКОЙ — есть предупреждения, но функциональность сохранена"
     else:
         verdict = "✅ СИСТЕМА СТАБИЛЬНА — все компоненты работают в штатном режиме"
+
+    verdict += "\n\n" + ext_verdict
 
     # ── What was tested ──
     what_tested = {
@@ -589,7 +677,8 @@ def analyze(config: SystemConfig, scenario: Scenario) -> AnalysisResult:
         config_info=config_info,
         scenario_explanation=ScenarioExplanation(
             title=scenario_titles.get(sname, "Тест"),
-            what_was_tested=what_tested.get(sname, "Тестирование системы"),
+            what_was_tested=what_tested.get(sname, "Тестирование системы")
+                           + f"\n\n{ext_verdict}",
             verdict=verdict,
             system_limits=system_limits,
         ),

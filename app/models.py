@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 from pydantic import BaseModel
 
 
@@ -15,9 +15,21 @@ class Scenario(BaseModel):
     params: Dict[str, float | int | str]
 
 
+class NormativeEntry(BaseModel):
+    app_name: str
+    replicas: int = 1
+    cpu_cores: float = 1.0
+    memory_mib: float = 512
+    hpa_cpu_pct: int | None = None
+    estimated_rps_capacity: int = 200
+    latency_slo_ms: int = 200
+    error_slo_pct: float = 1.0
+
+
 class AnalysisRequest(BaseModel):
     config: SystemConfig
     scenario: Scenario
+    normatives: Optional[List[NormativeEntry]] = None
 
 
 class ComponentMetrics(BaseModel):
@@ -31,6 +43,7 @@ class ComponentMetrics(BaseModel):
     error_rate: float
     status: str
     load_percent: float
+    propagated: bool = False
 
 
 class EdgeInfo(BaseModel):
@@ -62,4 +75,20 @@ class AnalysisResult(BaseModel):
     summary: Dict[str, float | str]
     recommendations: List[str]
     config_info: Dict[str, float | int | str]
-    scenario_explanation: ScenarioExplanation
+    scenario_explanation: ScenarioExplanation | None = None
+    normatives: List[NormativeEntry] | None = None
+
+    class Config:
+        # Allow extra fields (e.g. from locust result with normatives attached)
+        extra = "ignore"
+
+
+class LocustTestRequest(BaseModel):
+    target_url: str
+    endpoints: List[str]
+    config: SystemConfig
+    num_users: int = 10
+    spawn_rate: float = 2
+    duration_sec: int = 30
+    method: str = "GET"
+    normatives: Optional[List[NormativeEntry]] = None

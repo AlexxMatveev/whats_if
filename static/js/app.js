@@ -16,6 +16,13 @@ numClients.addEventListener('input', () => $('numClientsVal').textContent = form
 rps.addEventListener('input', () => $('rpsVal').textContent = rps.value);
 dbLatency.addEventListener('input', () => $('dbLatencyVal').textContent = dbLatency.value);
 
+const locustUsers = $('locustUsers');
+const locustSpawnRate = $('locustSpawnRate');
+const locustDuration = $('locustDuration');
+locustUsers.addEventListener('input', () => $('locustUsersVal').textContent = locustUsers.value);
+locustSpawnRate.addEventListener('input', () => $('locustSpawnRateVal').textContent = locustSpawnRate.value);
+locustDuration.addEventListener('input', () => $('locustDurationVal').textContent = locustDuration.value);
+
 // ── Scenarios ─────────────────────────────────────────────
 let selectedScenario = null;
 let scenariosData = {};
@@ -89,6 +96,7 @@ function buildGraph(result) {
     id: c.id, label: c.label, type: c.type, status: c.status,
     cpu: c.cpu_percent, mem: c.memory_percent, lat: c.latency_ms,
     rps: c.rps, err: c.error_rate, load: c.load_percent,
+    propagated: c.propagated || false,
   }));
 
   const linkMap = new Map();
@@ -107,6 +115,7 @@ function buildGraph(result) {
   const typeColors = {
     clients: '#58a6ff', lb: '#a371f7', gateway: '#f0883e',
     app: '#23A2D9', container: '#23A2D9', database: '#23A2D9',
+    external: '#e51400',
   };
   const statusColors = {
     healthy: '#3fb950', warning: '#d29922', critical: '#f85149',
@@ -132,6 +141,49 @@ function buildGraph(result) {
     }
   });
 
+  // ── Layered layout to prevent edge crossings ──
+  const layerY = {
+    clients: h * 0.08, lb: h * 0.22, gateway: h * 0.36,
+    app: h * 0.52, container: h * 0.68, database: h * 0.84,
+    external: h * 0.84,
+  };
+
+  nodes.forEach(n => { n.y = layerY[n.type] || h * 0.5; });
+
+  ['clients', 'lb', 'gateway', 'app', 'database', 'external'].forEach(type => {
+    const typeNodes = nodes.filter(n => n.type === type);
+    if (!typeNodes.length) return;
+    if (type === 'clients' || type === 'lb' || type === 'gateway') {
+      typeNodes.forEach(n => { n.x = w / 2; });
+    } else if (type === 'app') {
+      const totalW = w * 0.55;
+      const startX = (w - totalW) / 2;
+      typeNodes.forEach((n, i) => { n.x = startX + (i + 0.5) * (totalW / typeNodes.length); });
+    } else if (type === 'database') {
+      const totalW = w * 0.2;
+      const startX = (w - totalW) / 2;
+      typeNodes.forEach((n, i) => { n.x = startX + (i + 0.5) * (totalW / typeNodes.length); });
+    } else if (type === 'external') {
+      typeNodes.forEach(n => { n.x = w - 100; });
+    }
+  });
+
+  const containers = nodes.filter(n => n.type === 'container');
+  containers.forEach(n => {
+    const parts = n.id.split('_');
+    if (parts.length >= 3) {
+      const appId = 'app_' + parts[1];
+      const appNode = nodes.find(nn => nn.id === appId);
+      if (appNode) {
+        const siblings = containers.filter(nn => nn.id.startsWith('container_' + parts[1]));
+        const idx = siblings.indexOf(n);
+        const spacing = Math.min(80, (w * 0.5) / Math.max(1, siblings.length));
+        const totalW = (siblings.length - 1) * spacing;
+        n.x = appNode.x - totalW / 2 + idx * spacing;
+      }
+    }
+  });
+
   sim = d3.forceSimulation(nodes)
     .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
       const s = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
@@ -140,22 +192,26 @@ function buildGraph(result) {
       if (s.type === 'clients' || t.type === 'clients') return 200;
       if (s.type === 'container' || t.type === 'container') return 90;
       return 130;
-    }))
-    .force('charge', d3.forceManyBody().strength(d => d.type === 'clients' ? -600 : -350))
-    .force('center', d3.forceCenter(w / 2, h / 2))
-    .force('collision', d3.forceCollide(d => d.type === 'container' ? 40 : 55));
+    }).strength(0.3))
+    .force('x', d3.forceX(d => d.x).strength(0.25))
+    .force('y', d3.forceY(d => layerY[d.type] || h * 0.5).strength(0.35))
+    .force('collision', d3.forceCollide(d => d.type === 'container' ? 40 : 55))
+    .alpha(0.2)
+    .alphaDecay(0.04);
 
   const linkG = svg.append('g');
+  // Mark propagated edges for thicker rendering
+  const propagatedSourceIds = new Set(nodes.filter(n => n.propagated).map(n => n.id));
+  links.forEach(l => { l.isPropagated = propagatedSourceIds.has(l.source) || propagatedSourceIds.has(l.target); });
+
   const linkEls = linkG.selectAll('line').data(links).join('line')
     .attr('stroke', d => d.status === 'healthy' ? PROD_GRAY : d.status === 'warning' ? '#d29922' : '#f85149')
     .attr('stroke-dasharray', d => d.status === 'critical' ? '5,3' : d.status === 'warning' ? '3,2' : 'none')
-    .attr('stroke-width', d => Math.max(1, Math.min(3.5, (d.value || 1) / 40)))
+    .attr('stroke-width', d => {
+      const base = Math.max(1, Math.min(3.5, (d.value || 1) / 40));
+      return d.isPropagated && d.status !== 'healthy' ? base * 1.8 : base;
+    })
     .attr('marker-end', d => 'url(#arr-' + (d.status === 'healthy' ? 'gray' : d.status === 'warning' ? 'warn' : 'crit') + ')');
-
-  const linkLabelG = svg.append('g');
-  const linkLabels = linkLabelG.selectAll('text')
-    .data(links.filter(d => d.label && d.label.length < 12))
-    .join('text').attr('class', 'edge-label').text(d => d.label);
 
   // ── System boundaries (dashed rects per app) ──
   const boundsG = svg.append('g');
@@ -198,11 +254,20 @@ function buildGraph(result) {
     const isBox = d.type === 'clients' || d.type === 'lb' || d.type === 'gateway' || d.type === 'app';
     const isDb = d.type === 'database';
     const isContainer = d.type === 'container';
+    const isExternal = d.type === 'external';
     const fillColor = typeColors[d.type] || '#23A2D9';
     const strokeColor = statusColors[d.status] || '#666';
 
     // Background shape — product view style
-    if (isDb) {
+    if (isExternal) {
+      const bw = sz * 1.6, bh = sz * 0.85;
+      g.append('rect').attr('class', 'node-bg')
+        .attr('x', -bw / 2).attr('y', -bh / 2)
+        .attr('width', bw).attr('height', bh).attr('rx', 4)
+        .attr('fill', fillColor).attr('opacity', 0.2)
+        .attr('stroke', strokeColor).attr('stroke-width', 2)
+        .attr('stroke-dasharray', '5,3');
+    } else if (isDb) {
       // Cylinder shape
       const cw = sz * 1.1, ch = sz * 0.65;
       g.append('ellipse')
@@ -239,11 +304,26 @@ function buildGraph(result) {
     }
 
     if (d.status === 'critical') {
-      const pulse = g.append(isDb ? 'rect' : isBox || isContainer ? 'rect' : 'ellipse');
+      // Red glow for propagated degradation (chain reaction)
+      if (d.propagated) {
+        const glow = g.append(isDb ? 'rect' : isBox || isContainer || isExternal ? 'rect' : 'ellipse');
+        if (isDb) {
+          glow.attr('x', -sz * 0.65).attr('y', -sz * 0.4)
+            .attr('width', sz * 1.3).attr('height', sz * 0.75).attr('rx', 6);
+        } else if (isBox || isContainer || isExternal) {
+          glow.attr('x', -sz * 0.75).attr('y', -sz * 0.5)
+            .attr('width', sz * 1.5).attr('height', sz * 0.85).attr('rx', isContainer ? 8 : 6);
+        } else {
+          glow.attr('rx', (d.type === 'app' ? sz * 0.7 : sz * 0.6)).attr('ry', sz * 0.45);
+        }
+        glow.attr('fill', 'rgba(248,81,73,0.12)').attr('stroke', 'none');
+      }
+
+      const pulse = g.append(isDb ? 'rect' : isBox || isContainer || isExternal ? 'rect' : 'ellipse');
       if (isDb) {
         pulse.attr('x', -sz * 0.55).attr('y', -sz * 0.35)
           .attr('width', sz * 1.1).attr('height', sz * 0.65).attr('rx', 4);
-      } else if (isBox || isContainer) {
+      } else if (isBox || isContainer || isExternal) {
         pulse.attr('x', -sz * 0.65).attr('y', -sz * 0.4)
           .attr('width', sz * 1.3).attr('height', sz * 0.75).attr('rx', isContainer ? 6 : 5);
       } else {
@@ -266,21 +346,21 @@ function buildGraph(result) {
 
     // Status dot
     g.append('circle')
-      .attr('cx', isBox || isContainer ? 0 : d.type === 'app' ? 18 : 14)
-      .attr('cy', -(isBox || isContainer || isDb ? 14 : d.type === 'app' ? 18 : 14))
+      .attr('cx', isBox || isContainer || isExternal ? 0 : d.type === 'app' ? 18 : 14)
+      .attr('cy', -(isBox || isContainer || isDb || isExternal ? 14 : d.type === 'app' ? 18 : 14))
       .attr('r', 3.5)
       .attr('fill', statusColors[d.status])
       .attr('stroke', '#0d1117').attr('stroke-width', 1.5);
 
     // Load bar
-    const barW = isBox || isContainer || isDb ? sz * 1.3 : sz * 1.1;
+    const barW = isBox || isContainer || isDb || isExternal ? sz * 1.3 : sz * 1.1;
     g.append('rect')
-      .attr('x', -barW / 2).attr('y', (isDb ? sz * 0.4 : isBox || isContainer ? sz * 0.5 : sz * 0.5) + 2)
+      .attr('x', -barW / 2).attr('y', (isDb ? sz * 0.4 : isBox || isContainer || isExternal ? sz * 0.5 : sz * 0.5) + 2)
       .attr('width', barW).attr('height', 3).attr('rx', 1.5)
       .attr('fill', '#21262d');
 
     g.append('rect')
-      .attr('x', -barW / 2).attr('y', (isDb ? sz * 0.4 : isBox || isContainer ? sz * 0.5 : sz * 0.5) + 2)
+      .attr('x', -barW / 2).attr('y', (isDb ? sz * 0.4 : isBox || isContainer || isExternal ? sz * 0.5 : sz * 0.5) + 2)
       .attr('width', barW * Math.min(1, d.load / 100)).attr('height', 3).attr('rx', 1.5)
       .attr('fill', statusColors[d.status]);
   });
@@ -292,11 +372,6 @@ function buildGraph(result) {
     linkEls
       .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
       .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-
-    // Update edge labels
-    linkLabels
-      .attr('x', d => (d.source.x + d.target.x) / 2)
-      .attr('y', d => (d.source.y + d.target.y) / 2);
 
     // Update nodes
     nodeGroup.attr('transform', d => `translate(${d.x},${d.y})`);
@@ -329,7 +404,6 @@ function buildGraph(result) {
     .on('zoom', (ev) => {
       nodeG.attr('transform', ev.transform);
       linkG.attr('transform', ev.transform);
-      linkLabelG.attr('transform', ev.transform);
       boundsG.attr('transform', ev.transform);
     }));
 }
@@ -341,6 +415,7 @@ function showModal(d) {
   const typeLabels = {
     app: 'Приложение', container: 'Контейнер', database: 'База данных',
     gateway: 'API Gateway', lb: 'Load Balancer', clients: 'Клиенты',
+    external: 'Внешний продукт',
   };
   $('modalBody').innerHTML = `
     <div class="metric-grid">
@@ -380,67 +455,149 @@ $('modalClose').addEventListener('click', () => $('modal').classList.remove('ope
 $('modal').addEventListener('click', e => { if (e.target === $('modal')) $('modal').classList.remove('open'); });
 
 // ── Analyze ───────────────────────────────────────────────
-async function analyze() {
-  const config = {
-    num_apps: parseInt(numApps.value),
-    containers_per_app: parseInt(contsPerApp.value),
-    num_clients: parseInt(numClients.value),
-    rps: parseInt(rps.value),
-    db_latency_ms: parseFloat(dbLatency.value),
-  };
+// ── Locust toggle ──
+let useLocust = false;
 
-  let scenario;
-  if (selectedScenario && scenariosData[selectedScenario]) {
-    scenario = { name: selectedScenario, params: { ...scenariosData[selectedScenario].params } };
-  } else {
-    scenario = {
-      name: 'baseline',
-      params: { rps_multiplier: 1, client_multiplier: 1, fail_count: 0, containers_add: 0, db_latency_multiplier: 1 },
-    };
-  }
+$('locustCheck').addEventListener('change', () => {
+  useLocust = $('locustCheck').checked;
+  $('locustConfig').style.display = useLocust ? 'block' : 'none';
+  $('analyzeBtn').textContent = useLocust ? '⚡ Запустить тест' : '🚀 Запустить анализ';
+});
 
-  const btn = $('analyzeBtn');
-  btn.textContent = '⏳ Анализ...';
-  btn.disabled = true;
+// ── Manifest upload ──
+let manifestNormatives = null;
 
+$('manifestCheck').addEventListener('change', () => {
+  $('manifestConfig').style.display = $('manifestCheck').checked ? 'block' : 'none';
+});
+
+$('manifestFiles').addEventListener('change', async (e) => {
+  const files = e.target.files;
+  if (!files.length) return;
+  const formData = new FormData();
+  for (const f of files) formData.append('files', f);
   try {
-    const res = await fetch('/api/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config, scenario }),
-    });
-    const result = await res.json();
-    currentResult = result;
-    updateUI(result);
-    // Sync Architecture tab with the same scenario
-    if (archData) {
-      try {
-        const syncRes = await fetch('/api/architecture/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            component_id: '',
-            scenario: scenario.name,
-            params: scenario.params,
-          }),
-        });
-        const archSync = await syncRes.json();
-        archResult = archSync;
-        archNodeStatuses = archSync.node_statuses;
-        renderArchitecture(archData, archNodeStatuses);
-        $('archUpdated').textContent = `🕐 ${new Date().toLocaleTimeString('ru-RU')}`;
-      } catch (_) { /* architecture sync is best-effort */ }
+    const res = await fetch('/api/manifest/parse', { method: 'POST', body: formData });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Parse failed');
+    const data = await res.json();
+    manifestNormatives = data.normatives;
+    const list = $('manifestAppList');
+    list.innerHTML = data.apps.map(a => {
+      const hpa = a.hpa_cpu_target ? `HPA:${a.hpa_cpu_target}%` : '';
+      const cpu = a.cpu_limit || a.cpu_request || '-';
+      const rep = a.replicas ? `${a.replicas} репл.` : '';
+      return `<div class="manifest-app-row"><span class="manifest-app-name">${a.name}</span><span class="manifest-app-badge">${rep}</span><span class="manifest-app-badge">CPU:${cpu}</span>${hpa ? `<span class="manifest-app-badge">${hpa}</span>` : ''}</div>`;
+    }).join('');
+    $('manifestResult').style.display = 'block';
+
+    // Auto-fill config fields from manifest
+    if (data.apps.length) {
+      $('numApps').value = data.apps.length;
+      const avgReplicas = Math.round(data.apps.reduce((s, a) => s + a.replicas, 0) / data.apps.length);
+      if (avgReplicas > 0) $('contsPerApp').value = avgReplicas;
     }
   } catch (err) {
     console.error(err);
-    $('descText').textContent = '❌ Ошибка при выполнении анализа.';
+    $('manifestAppList').innerHTML = `<span style="color:var(--red)">Error: ${err.message}</span>`;
+    $('manifestResult').style.display = 'block';
+  }
+});
+
+async function analyze() {
+  const btn = $('analyzeBtn');
+  btn.textContent = '⏳ Выполнение...';
+  btn.disabled = true;
+
+  try {
+    if (useLocust) {
+      const endpoints = $('locustEndpoints').value.split('\n').map(s => s.trim()).filter(Boolean);
+      const body = {
+        target_url: $('locustUrl').value.trim(),
+        endpoints,
+        config: {
+          num_apps: parseInt(numApps.value),
+          containers_per_app: parseInt(contsPerApp.value),
+          num_clients: parseInt(numClients.value),
+          rps: parseInt(rps.value),
+          db_latency_ms: parseFloat(dbLatency.value),
+        },
+        num_users: parseInt($('locustUsers').value),
+        spawn_rate: parseFloat($('locustSpawnRate').value),
+        duration_sec: parseInt($('locustDuration').value),
+        method: 'GET',
+        normatives: manifestNormatives || undefined,
+      };
+      const res = await fetch('/api/locust/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Locust test failed');
+      }
+      const result = await res.json();
+      currentResult = result;
+      updateUI(result);
+      $('descText').textContent = `⚡ Locust-тест: ${body.num_users} users, ${body.duration_sec}с, ${body.endpoints.length} endpoint'ов`;
+    } else {
+      const config = {
+        num_apps: parseInt(numApps.value),
+        containers_per_app: parseInt(contsPerApp.value),
+        num_clients: parseInt(numClients.value),
+        rps: parseInt(rps.value),
+        db_latency_ms: parseFloat(dbLatency.value),
+      };
+
+      let scenario;
+      if (selectedScenario && scenariosData[selectedScenario]) {
+        scenario = { name: selectedScenario, params: { ...scenariosData[selectedScenario].params } };
+      } else {
+        scenario = {
+          name: 'baseline',
+          params: { rps_multiplier: 1, client_multiplier: 1, fail_count: 0, containers_add: 0, db_latency_multiplier: 1 },
+        };
+      }
+
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config, scenario, normatives: manifestNormatives || undefined }),
+      });
+      const result = await res.json();
+      currentResult = result;
+      updateUI(result);
+      if (archData) {
+        try {
+          const syncRes = await fetch('/api/architecture/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              component_id: '',
+              scenario: scenario.name,
+              params: scenario.params,
+            }),
+          });
+          const archSync = await syncRes.json();
+          archResult = archSync;
+          archNodeStatuses = archSync.node_statuses;
+          renderArchitecture(archData, archNodeStatuses);
+          $('archUpdated').textContent = `🕐 ${new Date().toLocaleTimeString('ru-RU')}`;
+        } catch (_) { }
+      }
+    }
+  } catch (err) {
+    console.error(err);
+    $('descText').textContent = '❌ Ошибка: ' + err.message;
   } finally {
-    btn.textContent = '🚀 Запустить анализ';
+    btn.textContent = useLocust ? '⚡ Запустить тест' : '🚀 Запустить анализ';
     btn.disabled = false;
   }
 }
 
 function updateUI(result) {
+  assertionResults = null;
+  $('assertMainSummary').style.display = 'none';
   $('healthyCount').textContent = result.summary.healthy;
   $('warningCount').textContent = result.summary.warning;
   $('criticalCount').textContent = result.summary.critical;
@@ -449,6 +606,8 @@ function updateUI(result) {
   $('totalRps').textContent = Math.round(result.summary.total_rps);
   $('descText').textContent = String(result.summary.description);
   $('lastUpdated').textContent = `🕐 ${new Date().toLocaleTimeString('ru-RU')}`;
+  // Store normatives from result for assertion use
+  if (result.normatives) manifestNormatives = result.normatives;
 
   // Recommendations (collapsible)
   const recBox = $('recBox');
@@ -616,6 +775,7 @@ function renderArchitecture(data, nodeStatuses) {
     children: n.children || [], fill: n.fill, shape: n.shape,
     groupId: nodeToGroup[n.id] || null,
     status: (nodeStatuses && nodeStatuses[n.id]) || 'healthy',
+    propagated: false,
   }));
   const d3links = edges.map(e => ({ source: e.source, target: e.target, desc: e.description || e.technology || '' }));
 
@@ -849,6 +1009,16 @@ function renderArchitecture(data, nodeStatuses) {
       .attr('width', barW * (loadPct / 100)).attr('height', 3).attr('rx', 1.5)
       .attr('fill', strokeC);
 
+    // Red glow for propagated degradation chain
+    if (d.status === 'critical' && d.propagated) {
+      const gw = _isDb ? sz * 1.4 : _isUI ? sz * 1.5 : sz * 1.8;
+      const gh = _isDb ? sz * 0.8 : _isUI ? sz * 1.1 : _isRole ? sz * 1.0 : sz * 0.95;
+      g.append('rect')
+        .attr('x', -gw / 2).attr('y', -gh / 2)
+        .attr('width', gw).attr('height', gh).attr('rx', 8)
+        .attr('fill', 'rgba(248,81,73,0.12)').attr('stroke', 'none');
+    }
+
     // Pulse for critical
     if (d.status === 'critical') {
       const pw = sz * 1.4, ph = _isDb ? sz * 0.7 : _isUI ? sz * 1.0 : sz * 0.8;
@@ -1030,6 +1200,717 @@ $('archAnalyzeAllBtn').addEventListener('click', async () => {
   }
 });
 
+// ── Assertions (JMeter-style checks) ─────────────────────
+const ASSERTION_RULES = [
+  {
+    id: 'status', name: 'Статус', icon: '🟢',
+    type: 'builtin', metric: 'status', condition: 'equals', value: 'healthy',
+    severity: 'critical', jmeterType: 'Response Assertion',
+    desc: 'Компонент должен быть healthy',
+    combine: 'all', useRegex: false, ignoreStatus: false, scope: 'all',
+    tooltip: 'Аналог Response Assertion в JMeter: проверяет, что HTTP-код ответа равен 200 (у нас — status == "healthy"). Если компонент вернул warning/critical — assertion FAIL.',
+    enabled: true,
+  },
+  {
+    id: 'latency', name: 'Длительность', icon: '⏱',
+    type: 'builtin', metric: 'latency_ms', condition: 'lt', value: 200,
+    severity: 'warning', jmeterType: 'Duration Assertion',
+    desc: 'Ответ должен быть < 200ms',
+    combine: 'all', useRegex: false, ignoreStatus: false, scope: 'all',
+    tooltip: 'Аналог Duration Assertion в JMeter: проверяет, что время ответа не превышает порог (у нас — latency_ms < 200ms). Если ответ дольше — FAIL. В JMeter добавляется к Sampler\'у как дочерний элемент.',
+    enabled: true,
+  },
+  {
+    id: 'cpu', name: 'CPU', icon: '🔥',
+    type: 'builtin', metric: 'cpu_percent', condition: 'lt', value: 80,
+    severity: 'critical', jmeterType: 'Size Assertion',
+    desc: 'CPU должен быть < 80%',
+    combine: 'all', useRegex: false, ignoreStatus: false, scope: 'all',
+    tooltip: 'Аналог Size Assertion в JMeter: проверяет, что размер ответа (у нас — CPU %) не превышает лимит. Size Assertion сравнивает байты через = / > / < / !=.',
+    enabled: true,
+  },
+  {
+    id: 'memory', name: 'Память', icon: '💾',
+    type: 'builtin', metric: 'memory_percent', condition: 'lt', value: 80,
+    severity: 'warning', jmeterType: 'Size Assertion',
+    desc: 'Память должна быть < 80%',
+    combine: 'all', useRegex: false, ignoreStatus: false, scope: 'all',
+    tooltip: 'Аналог Size Assertion в JMeter: проверяет размер ответа (у нас — Memory %) через оператор сравнения. Если порог превышен — FAIL.',
+    enabled: true,
+  },
+  {
+    id: 'errors', name: 'Ошибки', icon: '❌',
+    type: 'builtin', metric: 'error_rate', condition: 'lt', value: 5,
+    severity: 'critical', jmeterType: 'JSON Assertion',
+    desc: 'Ошибки должны быть < 5%',
+    combine: 'all', useRegex: false, ignoreStatus: false, scope: 'all',
+    tooltip: 'Аналог JSON Assertion в JMeter: парсит JSON-ответ, находит значение по JsonPath (у нас — error_rate) и сверяет с ожидаемым (< 5%). Если не совпало — FAIL.',
+    enabled: true,
+  },
+  {
+    id: 'load', name: 'Нагрузка', icon: '📈',
+    type: 'builtin', metric: 'load_percent', condition: 'lt', value: 80,
+    severity: 'warning', jmeterType: 'Response Assertion',
+    desc: 'Нагрузка должна быть < 80%',
+    combine: 'all', useRegex: false, ignoreStatus: false, scope: 'all',
+    tooltip: 'Аналог Response Assertion в JMeter: проверяет текст ответа на совпадение с паттерном (у нас — load_percent < 80%). Используется режим Contains/Matches/Equals.',
+    enabled: true,
+  },
+];
+
+let assertionRules = JSON.parse(JSON.stringify(ASSERTION_RULES));
+let assertionResults = null;
+let assertViewMode = 'table';
+let jsr223Counter = 0;
+
+// ── Render rules in sidebar ──
+function renderAssertionRules() {
+  const container = $('assertionsRules');
+  container.innerHTML = '';
+  assertionRules.forEach(rule => {
+    const div = document.createElement('div');
+    div.className = 'assertion-rule' + (rule.enabled ? ' active' : '');
+    div.title = rule.tooltip;
+
+    let statusHtml = '<span class="rule-status none">—</span>';
+    if (assertionResults) {
+      const ruleResults = assertionResults.filter(r => r.ruleId === rule.id);
+      const failed = ruleResults.filter(r => !r.pass).length;
+      if (failed > 0) {
+        statusHtml = `<span class="rule-status fail">${failed}/${ruleResults.length}</span>`;
+      } else if (ruleResults.length > 0) {
+        statusHtml = `<span class="rule-status pass">✓ ${ruleResults.length}</span>`;
+      }
+    }
+
+    const metaParts = [];
+    if (rule.type === 'jsr223') {
+      metaParts.push('<span class="rule-jmeter">JSR223</span>');
+      metaParts.push('<span class="rule-jmeter" style="background:var(--yellow-bg);color:var(--yellow)">📜 script</span>');
+    } else {
+      metaParts.push(`<span class="rule-jmeter">${rule.jmeterType}</span>`);
+      let th = rule.condition === 'equals' ? '=' : '<';
+      th += ` ${rule.value}${['latency_ms'].includes(rule.metric) ? 'ms' : ['error_rate','cpu_percent','memory_percent','load_percent'].includes(rule.metric) ? '%' : ''}`;
+      metaParts.push(`<span class="rule-threshold">${th}</span>`);
+    }
+    if (rule.useRegex) metaParts.push('<span class="rule-jmeter" style="background:var(--blue-bg);color:var(--accent)">.*</span>');
+    if (rule.ignoreStatus) metaParts.push('<span class="rule-jmeter" style="background:var(--yellow-bg);color:var(--yellow)">ignore</span>');
+    if (rule.scope === 'sub') metaParts.push('<span class="rule-jmeter">sub</span>');
+
+    div.innerHTML = `
+      <div class="rule-toggle ${rule.enabled ? 'on' : 'off'}">${rule.enabled ? '✓' : ''}</div>
+      <div class="rule-body">
+        <div class="rule-name">${rule.icon} ${rule.name}</div>
+        <div class="rule-meta">${metaParts.join('')}</div>
+      </div>
+      ${statusHtml}
+    `;
+
+    // Left click = toggle, right click (or double click) = edit
+    div.addEventListener('click', () => toggleAssertionRule(rule.id));
+    div.addEventListener('dblclick', (e) => { e.stopPropagation(); openRuleEditor(rule.id); });
+    container.appendChild(div);
+  });
+}
+
+// ── Toggle rule on/off ──
+function toggleAssertionRule(id) {
+  const rule = assertionRules.find(r => r.id === id);
+  if (rule) {
+    rule.enabled = !rule.enabled;
+    renderAssertionRules();
+    if (assertionResults) runAssertions();
+  }
+}
+
+// ── Rule editor modal ──
+let editingRuleId = null;
+
+function openRuleEditor(id) {
+  const rule = assertionRules.find(r => r.id === id);
+  if (!rule) return;
+  editingRuleId = id;
+
+  const isBuiltin = rule.type === 'builtin';
+  let html = '<div class="rule-editor">';
+
+  // Name
+  html += '<div class="re-section"><label class="re-label">Название</label>';
+  html += `<input type="text" id="reName" value="${rule.name}" style="width:100%"></div>`;
+
+  // JMeter Type (builtin only)
+  if (isBuiltin) {
+    html += '<div class="re-section"><label class="re-label">Тип JMeter</label>';
+    html += `<select id="reJmeterType">
+      <option value="Response Assertion" ${rule.jmeterType === 'Response Assertion' ? 'selected' : ''}>Response Assertion</option>
+      <option value="Duration Assertion" ${rule.jmeterType === 'Duration Assertion' ? 'selected' : ''}>Duration Assertion</option>
+      <option value="Size Assertion" ${rule.jmeterType === 'Size Assertion' ? 'selected' : ''}>Size Assertion</option>
+      <option value="JSON Assertion" ${rule.jmeterType === 'JSON Assertion' ? 'selected' : ''}>JSON Assertion</option>
+      <option value="JSON JMESPath Assertion" ${rule.jmeterType === 'JSON JMESPath Assertion' ? 'selected' : ''}>JSON JMESPath Assertion</option>
+      <option value="XML Assertion" ${rule.jmeterType === 'XML Assertion' ? 'selected' : ''}>XML Assertion</option>
+    </select></div>`;
+
+    // Metric + Condition + Value
+    html += '<div class="re-section"><label class="re-label">Параметры проверки</label>';
+    html += '<div class="re-row">';
+    html += `<select id="reMetric">
+      <option value="status" ${rule.metric === 'status' ? 'selected' : ''}>status</option>
+      <option value="cpu_percent" ${rule.metric === 'cpu_percent' ? 'selected' : ''}>cpu_percent</option>
+      <option value="memory_percent" ${rule.metric === 'memory_percent' ? 'selected' : ''}>memory_percent</option>
+      <option value="latency_ms" ${rule.metric === 'latency_ms' ? 'selected' : ''}>latency_ms</option>
+      <option value="error_rate" ${rule.metric === 'error_rate' ? 'selected' : ''}>error_rate</option>
+      <option value="load_percent" ${rule.metric === 'load_percent' ? 'selected' : ''}>load_percent</option>
+    </select>`;
+    html += `<select id="reCondition">
+      <option value="lt" ${rule.condition === 'lt' ? 'selected' : ''}>&lt; (less than)</option>
+      <option value="gt" ${rule.condition === 'gt' ? 'selected' : ''}>&gt; (greater than)</option>
+      <option value="lte" ${rule.condition === 'lte' ? 'selected' : ''}>&lt;=</option>
+      <option value="gte" ${rule.condition === 'gte' ? 'selected' : ''}>&gt;=</option>
+      <option value="equals" ${rule.condition === 'equals' ? 'selected' : ''}>== (equals)</option>
+    </select>`;
+    html += `<input type="text" id="reValue" value="${rule.value}">`;
+    html += '</div></div>';
+  }
+
+  // JSR223 script
+  if (!isBuiltin) {
+    html += '<div class="re-section"><label class="re-label">JSR223 Script (JavaScript)</label>';
+    html += `<textarea id="reScript" placeholder="// Доступны: component (id, type, status, cpu_percent, memory_percent, latency_ms, rps, error_rate, load_percent)
+// Должна вернуть true (PASS) или false (FAIL)
+return component.cpu_percent < 50;">${rule.script || ''}</textarea>`;
+    html += '<div class="re-help">Функция автоматически оборачивается. Используйте <span class="re-badge">component</span> для доступа к метрикам. Верните <span class="re-badge">true</span> (PASS) или <span class="re-badge">false</span> (FAIL).</div></div>';
+  }
+
+  // Advanced options
+  html += '<div class="re-section-divider"></div>';
+  html += '<div class="re-section"><label class="re-label">Расширенные настройки (JMeter)</label>';
+
+  // Combine (OR/AND)
+  html += '<div class="re-row">';
+  html += `<label class="re-check">Комбинация:
+    <select id="reCombine">
+      <option value="all" ${rule.combine === 'all' ? 'selected' : ''}>AND (все должны пройти)</option>
+      <option value="any" ${rule.combine === 'any' ? 'selected' : ''}>OR (достаточно одной)</option>
+    </select>
+  </label></div>`;
+
+  // Scope
+  html += '<div class="re-row">';
+  html += `<label class="re-check">Scope (область):
+    <select id="reScope">
+      <option value="all" ${rule.scope === 'all' ? 'selected' : ''}>Main + Sub-samples</option>
+      <option value="component" ${rule.scope === 'component' ? 'selected' : ''}>Main sample only</option>
+      <option value="sub" ${rule.scope === 'sub' ? 'selected' : ''}>Sub-samples only</option>
+    </select>
+  </label></div>`;
+
+  // Use Regex
+  html += '<div class="re-row">';
+  html += `<label class="re-check">
+    <input type="checkbox" id="reUseRegex" ${rule.useRegex ? 'checked' : ''}>
+    Использовать Regex (для строковых полей)
+  </label></div>`;
+
+  // Ignore Status
+  html += '<div class="re-row">';
+  html += `<label class="re-check">
+    <input type="checkbox" id="reIgnoreStatus" ${rule.ignoreStatus ? 'checked' : ''}>
+    Ignore Status (принудительно установить success перед проверкой)
+  </label></div>`;
+
+  html += '</div>'; // re-section
+
+  // Buttons
+  html += '<div class="re-section-divider"></div>';
+  html += '<div class="re-btn-row">';
+  if (rule.type === 'jsr223') {
+    html += `<button class="re-btn-delete" id="reDeleteBtn">🗑 Удалить правило</button>`;
+  }
+  html += `<button class="re-btn-save" id="reSaveBtn">💾 Сохранить</button>`;
+  html += '</div></div>';
+
+  $('ruleModalTitle').textContent = isBuiltin ? `⚙️ ${rule.name} — ${rule.jmeterType}` : `📜 ${rule.name} — JSR223 Assertion`;
+  $('ruleModalBody').innerHTML = html;
+  $('ruleModal').classList.add('open');
+
+  $('reSaveBtn').addEventListener('click', saveRuleEditor);
+  const delBtn = $('reDeleteBtn');
+  if (delBtn) delBtn.addEventListener('click', deleteRule);
+}
+
+function saveRuleEditor() {
+  const rule = assertionRules.find(r => r.id === editingRuleId);
+  if (!rule) return;
+
+  rule.name = $('reName').value;
+  if (rule.type === 'builtin') {
+    rule.jmeterType = $('reJmeterType').value;
+    rule.metric = $('reMetric').value;
+    rule.condition = $('reCondition').value;
+    const rawVal = $('reValue').value;
+    rule.value = rule.metric === 'status' ? rawVal : parseFloat(rawVal) || 0;
+  } else {
+    rule.script = $('reScript').value;
+  }
+  rule.combine = $('reCombine').value;
+  rule.scope = $('reScope').value;
+  rule.useRegex = $('reUseRegex').checked;
+  rule.ignoreStatus = $('reIgnoreStatus').checked;
+
+  $('ruleModal').classList.remove('open');
+  editingRuleId = null;
+  renderAssertionRules();
+  if (assertionResults) runAssertions();
+}
+
+function deleteRule() {
+  if (!editingRuleId) return;
+  assertionRules = assertionRules.filter(r => r.id !== editingRuleId);
+  $('ruleModal').classList.remove('open');
+  editingRuleId = null;
+  renderAssertionRules();
+  if (assertionResults) runAssertions();
+}
+
+$('ruleModalClose').addEventListener('click', () => { $('ruleModal').classList.remove('open'); editingRuleId = null; });
+$('ruleModal').addEventListener('click', e => { if (e.target === $('ruleModal')) { $('ruleModal').classList.remove('open'); editingRuleId = null; } });
+
+// ── Add JSR223 rule ──
+$('addJsr223Btn').addEventListener('click', () => {
+  jsr223Counter++;
+  const newRule = {
+    id: 'jsr223_' + jsr223Counter + '_' + Date.now(),
+    name: 'JSR223 Script ' + jsr223Counter,
+    icon: '📜',
+    type: 'jsr223',
+    script: 'return component.cpu_percent < 50;',
+    language: 'js',
+    severity: 'critical',
+    jmeterType: 'JSR223 Assertion',
+    desc: 'Пользовательский скрипт',
+    combine: 'all', useRegex: false, ignoreStatus: false, scope: 'all',
+    enabled: true,
+  };
+  assertionRules.push(newRule);
+  renderAssertionRules();
+  openRuleEditor(newRule.id);
+});
+
+// ── View toggle ──
+document.querySelectorAll('.view-toggle-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.view-toggle-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    assertViewMode = btn.dataset.view;
+    if (assertionResults) renderAssertResults();
+  });
+});
+
+function renderAssertResults() {
+  if (!assertionResults) return;
+  if (assertViewMode === 'table') {
+    $('assertTableWrap').style.display = '';
+    $('assertTreeWrap').style.display = 'none';
+    renderAssertTable();
+  } else {
+    $('assertTableWrap').style.display = 'none';
+    $('assertTreeWrap').style.display = '';
+    renderAssertTree();
+  }
+}
+
+function renderAssertTable() {
+  const tbody = $('assertionsTableBody');
+  const failedResults = assertionResults.filter(r => !r.pass);
+  if (failedResults.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--green);padding:8px">✅ Все проверки пройдены</td></tr>`;
+  } else {
+    tbody.innerHTML = failedResults.map(r => {
+      const unit = ['latency_ms'].includes(r.metric) ? 'ms' : ['error_rate','cpu_percent','memory_percent','load_percent'].includes(r.metric) ? '%' : '';
+      return `<tr>
+        <td>${r.componentLabel}</td>
+        <td>${r.ruleIcon} ${r.ruleName}</td>
+        <td>${r.jmeterType}</td>
+        <td>${r.expected}${unit}</td>
+        <td>${typeof r.actual === 'number' ? r.actual.toFixed(1) : r.actual}${unit}</td>
+        <td class="assert-fail">✕ FAIL</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+// ── Tree View (View Results Tree) ──
+let treeExpanded = {};
+
+function renderAssertTree() {
+  const container = $('assertTree');
+  container.innerHTML = '';
+  if (!assertionResults || !currentResult) return;
+
+  // Group results by rule then by component
+  const byRule = {};
+  assertionResults.forEach(r => {
+    if (!byRule[r.ruleId]) byRule[r.ruleId] = { rule: r, components: {} };
+    if (!byRule[r.ruleId].components[r.componentId]) {
+      byRule[r.ruleId].components[r.componentId] = { label: r.componentLabel, results: [] };
+    }
+    byRule[r.ruleId].components[r.componentId].results.push(r);
+  });
+
+  // Build tree
+  Object.entries(byRule).forEach(([ruleId, group]) => {
+    const ruleKey = 'rule_' + ruleId;
+    if (treeExpanded[ruleKey] === undefined) treeExpanded[ruleKey] = true;
+
+    const ruleNode = createTreeNode(container, ruleKey, {
+      icon: group.rule.ruleIcon,
+      label: group.rule.ruleName + ` (${group.rule.jmeterType})`,
+      value: '',
+      expanded: true,
+    });
+
+    Object.entries(group.components).forEach(([compId, compGroup]) => {
+      const compKey = ruleKey + '_' + compId;
+      if (treeExpanded[compKey] === undefined) treeExpanded[compKey] = false;
+
+      const allPass = compGroup.results.every(r => r.pass);
+      const compNode = createTreeNode(ruleNode.content, compKey, {
+        icon: allPass ? '✅' : '❌',
+        label: compGroup.label,
+        value: `${compGroup.results.filter(r => r.pass).length}/${compGroup.results.length}`,
+        valueClass: allPass ? 'pass' : 'fail',
+        expanded: false,
+      });
+
+      compGroup.results.forEach(r => {
+        const leafKey = compKey + '_' + r.metric;
+        createTreeNode(compNode.content, leafKey, {
+          icon: r.pass ? '✅' : '❌',
+          label: r.ruleName,
+          value: `${typeof r.actual === 'number' ? r.actual.toFixed(1) : r.actual} / ${r.expected}`,
+          valueClass: r.pass ? 'pass' : 'fail',
+          isLeaf: true,
+        });
+      });
+    });
+  });
+}
+
+function createTreeNode(parent, key, opts) {
+  const isExpanded = treeExpanded[key] !== false;
+  const nodeDiv = document.createElement('div');
+  nodeDiv.className = 'assert-tree-node';
+
+  const row = document.createElement('div');
+  row.className = 'assert-tree-row';
+
+  const toggle = document.createElement('span');
+  toggle.className = 'assert-tree-toggle ' + (opts.isLeaf ? 'leaf' : isExpanded ? 'expanded' : 'collapsed');
+  row.appendChild(toggle);
+
+  if (!opts.isLeaf) {
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      treeExpanded[key] = !treeExpanded[key];
+      renderAssertTree();
+    });
+  }
+
+  const icon = document.createElement('span');
+  icon.className = 'assert-tree-icon';
+  icon.textContent = opts.icon || '•';
+  row.appendChild(icon);
+
+  const label = document.createElement('span');
+  label.className = 'assert-tree-label';
+  label.textContent = opts.label;
+  row.appendChild(label);
+
+  if (opts.value) {
+    const val = document.createElement('span');
+    val.className = 'assert-tree-value ' + (opts.valueClass || 'pass');
+    val.textContent = opts.value;
+    row.appendChild(val);
+  }
+
+  nodeDiv.appendChild(row);
+
+  const content = document.createElement('div');
+  content.className = 'assert-tree-content';
+  content.style.display = isExpanded ? 'block' : 'none';
+  nodeDiv.appendChild(content);
+  nodeDiv.content = content;
+
+  parent.appendChild(nodeDiv);
+  return nodeDiv;
+}
+
+// ── Evaluate a single assertion ──
+function evaluateAssertion(rule, component) {
+  let actual;
+
+  // Ignore Status: force healthy before check
+  let effectiveStatus = component.status;
+  if (rule.ignoreStatus) effectiveStatus = 'healthy';
+
+  // JSR223: execute user script
+  if (rule.type === 'jsr223') {
+    try {
+      const fn = new Function('component', rule.script || 'return true;');
+      const comp = {
+        id: component.id,
+        type: component.type,
+        status: effectiveStatus,
+        cpu_percent: component.cpu_percent,
+        memory_percent: component.memory_percent,
+        latency_ms: component.latency_ms,
+        rps: component.rps,
+        error_rate: component.error_rate,
+        load_percent: component.load_percent,
+      };
+      const pass = fn(comp) === true;
+      return { pass, actual: pass ? 'true' : 'false', expected: 'true' };
+    } catch (e) {
+      return { pass: false, actual: 'ERROR: ' + e.message, expected: 'true' };
+    }
+  }
+
+  // Builtin assertion
+  if (rule.metric === 'status') {
+    actual = effectiveStatus;
+    const expected = rule.value;
+    if (rule.useRegex) {
+      try { return { pass: new RegExp(expected).test(actual), actual, expected }; }
+      catch (e) { return { pass: false, actual, expected: 'regex:' + expected }; }
+    }
+    return { pass: actual === expected, actual, expected };
+  }
+
+  actual = component[rule.metric];
+  if (actual === undefined || actual === null) return { pass: true, actual: '—', expected: rule.value };
+
+  // Per-app override from K8s manifest normatives
+  let threshold = rule.value;
+  if (manifestNormatives && rule.id !== 'status') {
+    const compLabel = (component.label || '').split('\n')[0].trim().toLowerCase();
+    const match = manifestNormatives.find(n =>
+      n.app_name.toLowerCase().replace(/[\s-_]/g, '') === compLabel.replace(/[\s-_]/g, '')
+    );
+    if (match) {
+      if (rule.id === 'latency') threshold = match.latency_slo_ms;
+      else if (rule.id === 'errors') threshold = match.error_slo_pct;
+      else if (rule.id === 'cpu') threshold = match.hpa_cpu_pct ? match.hpa_cpu_pct : 80;
+    }
+  }
+
+  let pass;
+  if (rule.useRegex && typeof actual === 'string') {
+    try { pass = new RegExp(threshold).test(actual); }
+    catch (e) { pass = false; }
+  } else {
+    switch (rule.condition) {
+      case 'lt': pass = actual < threshold; break;
+      case 'gt': pass = actual > threshold; break;
+      case 'lte': pass = actual <= threshold; break;
+      case 'gte': pass = actual >= threshold; break;
+      case 'equals': pass = String(actual) === String(threshold); break;
+      default: pass = true;
+    }
+  }
+  return { pass, actual, expected: threshold };
+}
+
+// ── Run all assertions ──
+function runAssertions() {
+  const btn = $('runAssertionsBtn');
+  btn.textContent = '⏳ Проверка...';
+  btn.disabled = true;
+
+  setTimeout(() => {
+    if (!currentResult) {
+      btn.textContent = '▶ Запустить проверки';
+      btn.disabled = false;
+      $('assertionsResults').style.display = 'none';
+      $('assertPassCount').textContent = '0';
+      $('assertFailCount').textContent = '0';
+      $('assertTotalCount').textContent = '0';
+      return;
+    }
+
+    const activeRules = assertionRules.filter(r => r.enabled);
+    const rawResults = [];
+    let totalAsserts = 0, passed = 0, failed = 0;
+
+    // Determine which components to check per rule (scope)
+    currentResult.components.forEach(comp => {
+      activeRules.forEach(rule => {
+        // Scope filtering
+        if (rule.scope === 'component' && comp.type === 'container') return;
+        if (rule.scope === 'sub' && comp.type !== 'container') return;
+
+        const { pass, actual, expected } = evaluateAssertion(rule, comp);
+        rawResults.push({
+          componentId: comp.id,
+          componentLabel: comp.label.split('\n')[0],
+          ruleId: rule.id,
+          ruleName: rule.name,
+          ruleIcon: rule.icon,
+          jmeterType: rule.jmeterType,
+          metric: rule.metric,
+          expected: String(expected),
+          actual,
+          pass,
+          severity: rule.severity,
+        });
+        totalAsserts++;
+        if (pass) passed++;
+        else failed++;
+      });
+    });
+
+    // Apply OR/AND combine logic per rule
+    // For 'any' (OR): if at least one component passes, mark all as pass
+    // For 'all' (AND): if any fails, the rule fails overall (already computed)
+    activeRules.forEach(rule => {
+      if (rule.combine === 'any') {
+        const ruleResults = rawResults.filter(r => r.ruleId === rule.id);
+        const anyPass = ruleResults.some(r => r.pass);
+        ruleResults.forEach(r => {
+          if (r.pass !== anyPass) {
+            r.pass = anyPass;
+            if (anyPass) { passed++; failed--; }
+            else { passed--; failed++; }
+          }
+        });
+      }
+    });
+
+    assertionResults = rawResults;
+    $('assertPassCount').textContent = passed;
+    $('assertFailCount').textContent = failed;
+    $('assertTotalCount').textContent = totalAsserts;
+    $('assertLastUpdated').textContent = `🕐 ${new Date().toLocaleTimeString('ru-RU')}`;
+    renderAssertionRules();
+    renderAssertResults();
+    $('assertionsResults').style.display = 'block';
+    buildAssertionGraph(currentResult, rawResults);
+    updateMainAssertSummary();
+
+    btn.textContent = '▶ Запустить проверки';
+    btn.disabled = false;
+  }, 100);
+}
+
+function updateMainAssertSummary() {
+  const el = $('assertMainSummary');
+  if (!assertionResults || assertionResults.length === 0) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'flex';
+  const passed = assertionResults.filter(r => r.pass).length;
+  const failed = assertionResults.filter(r => !r.pass).length;
+  $('mainAssertPass').textContent = `${passed} ✓`;
+  $('mainAssertFail').textContent = `${failed} ✗`;
+  $('mainAssertTotal').textContent = `${passed + failed}`;
+}
+
+$('runAssertionsBtn').addEventListener('click', runAssertions);
+
+// ── Show Details Modal ──
+function showDetailsModal() {
+  const modalOverlay = $('detailsModal');
+  const body = $('detailsModalBody');
+
+  if (!assertionResults || assertionResults.length === 0) {
+    body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Сначала запустите проверки (кнопка «▶ Запустить проверки»)</div>';
+    modalOverlay.style.display = 'flex';
+    return;
+  }
+  const passed = parseInt($('assertPassCount').textContent);
+  const failed = parseInt($('assertFailCount').textContent);
+  const total = parseInt($('assertTotalCount').textContent);
+
+  // Group by rule
+  const ruleMap = {};
+  assertionResults.forEach(r => {
+    if (!ruleMap[r.ruleId]) {
+      const rule = assertionRules.find(ar => ar.id === r.ruleId);
+      ruleMap[r.ruleId] = { rule, results: [] };
+    }
+    ruleMap[r.ruleId].results.push(r);
+  });
+
+  let html = '<div class="details-report">';
+  html += '<div class="dr-summary">';
+  html += `<div class="dr-summary-item"><strong>${total}</strong>Всего проверок</div>`;
+  html += `<div class="dr-summary-item"><strong style="color:var(--green)">${passed}</strong>Пройдено</div>`;
+  html += `<div class="dr-summary-item"><strong style="color:var(--red)">${failed}</strong>Провалено</div>`;
+  html += '</div>';
+
+  let ruleIdx = 0;
+  Object.entries(ruleMap).forEach(([ruleId, group]) => {
+    const rule = group.rule;
+    const rulePassed = group.results.filter(r => r.pass).length;
+    const ruleFailed = group.results.filter(r => !r.pass).length;
+    const statusClass = ruleFailed === 0 ? 'pass' : 'fail';
+    const statusIcon = ruleFailed === 0 ? '✅' : '❌';
+
+    html += '<div class="dr-rule-group">';
+    html += `<div class="dr-rule-header ${statusClass}" data-rule-idx="${ruleIdx}">`;
+    html += `<span class="dr-toggle">▼</span>`;
+    html += `<span class="dr-label">${rule ? rule.icon + ' ' + rule.name : ruleId}</span>`;
+    html += `<span class="dr-badge ${statusClass}">${rulePassed}/${group.results.length}</span>`;
+    html += '</div>';
+    html += '<div class="dr-rule-body">';
+
+    group.results.forEach(r => {
+      html += '<div class="dr-comp-row">';
+      html += `<span class="dr-comp-icon">${r.pass ? '✅' : '❌'}</span>`;
+      html += `<span class="dr-comp-label">${r.componentLabel}</span>`;
+      html += `<span class="dr-comp-expected">exp: ${r.expected}</span>`;
+      const actualStr = typeof r.actual === 'number' ? r.actual.toFixed(2) : r.actual;
+      html += `<span class="dr-comp-actual" style="color:${r.pass ? 'var(--green)' : 'var(--red)'}">${actualStr}</span>`;
+      html += `<span class="dr-comp-status">${r.pass ? '✅' : '❌'}</span>`;
+      html += '</div>';
+    });
+
+    html += '</div></div>';
+    ruleIdx++;
+  });
+
+  html += '</div>';
+  body.innerHTML = html;
+  modalOverlay.style.display = 'flex';
+
+  // Collapse/expand handlers
+  body.querySelectorAll('.dr-rule-header').forEach(hdr => {
+    hdr.addEventListener('click', () => {
+      const toggle = hdr.querySelector('.dr-toggle');
+      const bodyEl = hdr.nextElementSibling;
+      const isCollapsed = bodyEl.style.display === 'none';
+      bodyEl.style.display = isCollapsed ? 'block' : 'none';
+      toggle.classList.toggle('collapsed', !isCollapsed);
+    });
+  });
+}
+
+$('showDetailsBtn').addEventListener('click', showDetailsModal);
+$('detailsModalClose').addEventListener('click', () => { $('detailsModal').style.display = 'none'; });
+$('detailsModal').addEventListener('click', (e) => {
+  if (e.target === $('detailsModal')) $('detailsModal').style.display = 'none';
+});
+
+document.querySelector('.tab[data-tab="assertions"]').addEventListener('click', () => {
+  setTimeout(() => {
+    renderAssertionRules();
+    if (currentResult) {
+      if (!assertionResults) runAssertions();
+      else { renderAssertResults(); buildAssertionGraph(currentResult, assertionResults); }
+    }
+  }, 60);
+});
+
 // ── Init ──────────────────────────────────────────────────
 loadScenarios();
 $('analyzeBtn').addEventListener('click', analyze);
@@ -1039,5 +1920,8 @@ window.addEventListener('resize', () => {
   if (currentResult) buildGraph(currentResult);
   if (archData && document.querySelector('.tab[data-tab="architecture"].active')) {
     renderArchitecture(archData, archNodeStatuses);
+  }
+  if (document.querySelector('.tab[data-tab="assertions"].active') && assertionResults) {
+    buildAssertionGraph(currentResult, assertionResults);
   }
 });

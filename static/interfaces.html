@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Whats If — Интерфейсы: Web vs Mobile</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+:root {
+  --web-color: #58a6ff;
+  --web-bg: rgba(88,166,255,0.12);
+  --mobile-color: #a371f7;
+  --mobile-bg: rgba(163,113,247,0.12);
+}
+
+.interface-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 16px 20px;
+  flex: 1;
+  overflow: auto;
+}
+
+.interface-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.interface-card.web { border-top: 3px solid var(--web-color); }
+.interface-card.mobile { border-top: 3px solid var(--mobile-color); }
+
+.interface-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.interface-header .icon {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.interface-card.web .icon { background: var(--web-bg); color: var(--web-color); }
+.interface-card.mobile .icon { background: var(--mobile-bg); color: var(--mobile-color); }
+
+.interface-header .title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.interface-card.web .title { color: var(--web-color); }
+.interface-card.mobile .title { color: var(--mobile-color); }
+
+.interface-header .sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.channel-diagram {
+  padding: 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.channel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.channel-row .label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.channel-row .bar-track {
+  flex: 1;
+  height: 18px;
+  background: var(--bg-card);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.channel-row .bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease, background 0.4s ease;
+}
+
+.channel-row .bar-track.web .bar-fill { background: var(--web-color); }
+.channel-row .bar-track.mobile .bar-fill { background: var(--mobile-color); }
+
+.channel-row .bar-value {
+  font-size: 11px;
+  font-weight: 600;
+  width: 60px;
+  text-align: right;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.channel-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: auto;
+}
+
+.channel-status .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+
+.channel-status.healthy { background: var(--green-bg); color: var(--green); }
+.channel-status.healthy .dot { background: var(--green); }
+.channel-status.warning { background: var(--yellow-bg); color: var(--yellow); }
+.channel-status.warning .dot { background: var(--yellow); }
+.channel-status.critical { background: var(--red-bg); color: var(--red); }
+.channel-status.critical .dot { background: var(--red); animation: pulse-opacity 1s ease-in-out infinite; }
+
+.metrics-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.metric-mini {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.metric-mini .m-label {
+  font-size: 8px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.metric-mini .m-value {
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+.comparison-bar {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.comparison-bar .comp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.comparison-bar .comp-row:last-child { margin-bottom: 0; }
+
+.comparison-bar .comp-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.comparison-bar .comp-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-primary);
+  display: flex;
+  overflow: hidden;
+}
+
+.comparison-bar .comp-track .seg-web {
+  height: 100%;
+  background: var(--web-color);
+  transition: width 0.4s ease;
+  border-radius: 4px 0 0 4px;
+}
+
+.comparison-bar .comp-track .seg-mobile {
+  height: 100%;
+  background: var(--mobile-color);
+  transition: width 0.4s ease;
+  border-radius: 0 4px 4px 0;
+}
+
+.comparison-bar .comp-track .seg-free {
+  height: 100%;
+  background: var(--border);
+  transition: width 0.4s ease;
+}
+
+.comparison-bar .comp-value {
+  font-size: 10px;
+  font-weight: 600;
+  width: 50px;
+  text-align: right;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.control-panel {
+  padding: 8px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
+  flex-wrap: wrap;
+}
+
+.control-panel .ctrl-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.control-panel .ctrl-group label {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.control-panel input[type="range"] {
+  width: 100px;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+}
+
+.control-panel input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 1px solid var(--bg-card);
+}
+
+.control-panel .ctrl-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  width: 50px;
+  font-family: var(--font-mono);
+}
+
+.legend {
+  display: flex;
+  gap: 12px;
+  padding: 0 20px 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.legend .leg-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend .leg-dot {
+  width: 8px; height: 8px;
+  border-radius: 2px;
+}
+
+.legend .leg-dot.web { background: var(--web-color); }
+.legend .leg-dot.mobile { background: var(--mobile-color); }
+
+@media (max-width: 900px) {
+  .interface-grid { grid-template-columns: 1fr; }
+  .control-panel { gap: 8px; }
+  .control-panel input[type="range"] { width: 70px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar" style="width:280px;min-width:280px">
+    <div class="logo">
+      <span class="logo-icon">?</span>
+      <span class="logo-text">Whats If</span>
+    </div>
+    <p class="subtitle">Сравнение каналов: Web vs Mobile</p>
+
+    <div class="panel-section">
+      <h3>🌐 Параметры нагрузки</h3>
+
+      <div class="field">
+        <label for="rpsSlider">RPS (запросов/сек)</label>
+        <input type="range" id="rpsSlider" min="10" max="5000" value="500" step="10">
+        <div class="field-value"><span id="rpsVal">500</span></div>
+      </div>
+
+      <div class="field">
+        <label for="clientsSlider">Активных клиентов</label>
+        <input type="range" id="clientsSlider" min="100" max="500000" value="10000" step="100">
+        <div class="field-value"><span id="clientsVal">10 000</span></div>
+      </div>
+
+      <div class="field">
+        <label for="dbLatencySlider">Задержка БД (ms)</label>
+        <input type="range" id="dbLatencySlider" min="1" max="200" value="5" step="1">
+        <div class="field-value"><span id="dbLatencyVal">5</span> ms</div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h3>📱 Характеристики каналов</h3>
+
+      <div class="field">
+        <label>Web: пропускная способность</label>
+        <div style="font-size:11px;color:var(--web-color);font-weight:600">100 Мбит/с · Desktop</div>
+      </div>
+      <div class="field">
+        <label>Mobile: пропускная способность</label>
+        <div style="font-size:11px;color:var(--mobile-color);font-weight:600">10 Мбит/с · 4G/LTE</div>
+      </div>
+      <div class="field">
+        <label>Размер ответа (Web)</label>
+        <div style="font-size:11px;color:var(--web-color);font-family:var(--font-mono)">~250 KB</div>
+      </div>
+      <div class="field">
+        <label>Размер ответа (Mobile)</label>
+        <div style="font-size:11px;color:var(--mobile-color);font-family:var(--font-mono)">~80 KB (сжатие)</div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h3>⚡ Дополнительно</h3>
+      <div class="field">
+        <label for="payloadWeb">Payload Web (KB)</label>
+        <input type="range" id="payloadWeb" min="50" max="500" value="250" step="10">
+        <div class="field-value"><span id="payloadWebVal">250</span> KB</div>
+      </div>
+      <div class="field">
+        <label for="payloadMobile">Payload Mobile (KB)</label>
+        <input type="range" id="payloadMobile" min="20" max="200" value="80" step="5">
+        <div class="field-value"><span id="payloadMobileVal">80</span> KB</div>
+      </div>
+      <div class="field">
+        <label for="mobileLatency">Коэфф. сети Mobile (x)</label>
+        <input type="range" id="mobileLatency" min="1" max="10" value="3" step="0.5">
+        <div class="field-value">×<span id="mobileLatencyVal">3</span></div>
+      </div>
+    </div>
+
+    <div style="margin-top:auto;padding-top:8px;border-top:1px solid var(--border);font-size:10px;color:var(--text-muted)">
+      <a href="/" style="color:var(--accent);text-decoration:none">← Назад к анализу</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="top-bar">
+      <div class="top-bar-left">
+        <span class="scenario-label">📊 Визуализация каналов: Web vs Mobile</span>
+      </div>
+      <div class="last-updated" id="statusIndicator">🟢 Работает</div>
+    </div>
+
+    <div class="comparison-bar" id="comparisonBar">
+      <div class="comp-row">
+        <span class="comp-label">Загрузка</span>
+        <div class="comp-track">
+          <div class="seg-web" id="compLoadWeb" style="width:30%"></div>
+          <div class="seg-mobile" id="compLoadMobile" style="width:40%"></div>
+          <div class="seg-free" id="compLoadFree" style="width:30%"></div>
+        </div>
+        <span class="comp-value" id="compLoadVal" style="color:var(--text-secondary)">—</span>
+      </div>
+      <div class="comp-row">
+        <span class="comp-label">Error Rate</span>
+        <div class="comp-track">
+          <div class="seg-web" id="compErrWeb" style="width:5%"></div>
+          <div class="seg-mobile" id="compErrMobile" style="width:8%"></div>
+          <div class="seg-free" id="compErrFree" style="width:87%"></div>
+        </div>
+        <span class="comp-value" id="compErrVal" style="color:var(--text-secondary)">—</span>
+      </div>
+      <div class="comp-row">
+        <span class="comp-label">Latency</span>
+        <div class="comp-track">
+          <div class="seg-web" id="compLatWeb" style="width:20%"></div>
+          <div class="seg-mobile" id="compLatMobile" style="width:35%"></div>
+          <div class="seg-free" id="compLatFree" style="width:45%"></div>
+        </div>
+        <span class="comp-value" id="compLatVal" style="color:var(--text-secondary)">—</span>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span class="leg-item"><span class="leg-dot web"></span> Web</span>
+      <span class="leg-item"><span class="leg-dot mobile"></span> Mobile</span>
+      <span class="leg-item" style="color:var(--yellow)">⚠ Warning &gt; 50%</span>
+      <span class="leg-item" style="color:var(--red)">✕ Critical &gt; 80%</span>
+    </div>
+
+    <div class="interface-grid" id="interfaceGrid">
+      <!-- Web Channel -->
+      <div class="interface-card web">
+        <div class="interface-header">
+          <div class="icon">🖥</div>
+          <span class="title">Web Interface</span>
+          <span class="sub">Desktop / Laptop</span>
+        </div>
+        <div class="channel-diagram">
+          <div class="metrics-row">
+            <div class="metric-mini">
+              <div class="m-label">Пропускная способность</div>
+              <div class="m-value" style="color:var(--web-color)" id="webBandwidth">100 Мбит/с</div>
+            </div>
+            <div class="metric-mini">
+              <div class="m-label">Payload</div>
+              <div class="m-value" style="color:var(--web-color)" id="webPayload">250 KB</div>
+            </div>
+          </div>
+          <div class="channel-row">
+            <span class="label">⏱ Время ответа</span>
+            <div class="bar-track web"><div class="bar-fill" id="webLatBar" style="width:15%"></div></div>
+            <span class="bar-value" id="webLatVal" style="color:var(--web-color)">15ms</span>
+          </div>
+          <div class="channel-row">
+            <span class="label">📈 Загрузка канала</span>
+            <div class="bar-track web"><div class="bar-fill" id="webLoadBar" style="width:25%"></div></div>
+            <span class="bar-value" id="webLoadVal" style="color:var(--web-color)">25%</span>
+          </div>
+          <div class="channel-row">
+            <span class="label">❌ Ошибки</span>
+            <div class="bar-track web"><div class="bar-fill" id="webErrBar" style="width:5%"></div></div>
+            <span class="bar-value" id="webErrVal" style="color:var(--web-color)">0.5%</span>
+          </div>
+          <div class="channel-row">
+            <span class="label">📊 Пропускная способность</span>
+            <div class="bar-track web"><div class="bar-fill" id="webThroughputBar" style="width:20%"></div></div>
+            <span class="bar-value" id="webThroughputVal" style="color:var(--web-color)">20 Mbps</span>
+          </div>
+          <div class="channel-status healthy" id="webStatus">
+            <span class="dot"></span>
+            <span id="webStatusText">✓ Здоров</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile Channel -->
+      <div class="interface-card mobile">
+        <div class="interface-header">
+          <div class="icon">📱</div>
+          <span class="title">Mobile Interface</span>
+          <span class="sub">Phone / Tablet 4G</span>
+        </div>
+        <div class="channel-diagram">
+          <div class="metrics-row">
+            <div class="metric-mini">
+              <div class="m-label">Пропускная способность</div>
+              <div class="m-value" style="color:var(--mobile-color)" id="mobileBandwidth">10 Мбит/с</div>
+            </div>
+            <div class="metric-mini">
+              <div class="m-label">Payload</div>
+              <div class="m-value" style="color:var(--mobile-color)" id="mobilePayload">80 KB</div>
+            </div>
+          </div>
+          <div class="channel-row">
+            <span class="label">⏱ Время ответа</span>
+            <div class="bar-track mobile"><div class="bar-fill" id="mobileLatBar" style="width:35%"></div></div>
+            <span class="bar-value" id="mobileLatVal" style="color:var(--mobile-color)">45ms</span>
+          </div>
+          <div class="channel-row">
+            <span class="label">📈 Загрузка канала</span>
+            <div class="bar-track mobile"><div class="bar-fill" id="mobileLoadBar" style="width:40%"></div></div>
+            <span class="bar-value" id="mobileLoadVal" style="color:var(--mobile-color)">40%</span>
+          </div>
+          <div class="channel-row">
+            <span class="label">❌ Ошибки</span>
+            <div class="bar-track mobile"><div class="bar-fill" id="mobileErrBar" style="width:8%"></div></div>
+            <span class="bar-value" id="mobileErrVal" style="color:var(--mobile-color)">1.2%</span>
+          </div>
+          <div class="channel-row">
+            <span class="label">📊 Пропускная способность</span>
+            <div class="bar-track mobile"><div class="bar-fill" id="mobileThroughputBar" style="width:30%"></div></div>
+            <span class="bar-value" id="mobileThroughputVal" style="color:var(--mobile-color)">3 Mbps</span>
+          </div>
+          <div class="channel-status healthy" id="mobileStatus">
+            <span class="dot"></span>
+            <span id="mobileStatusText">✓ Здоров</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const rpsSlider = $('rpsSlider');
+const clientsSlider = $('clientsSlider');
+const dbLatSlider = $('dbLatencySlider');
+const payloadWeb = $('payloadWeb');
+const payloadMobile = $('payloadMobile');
+const mobileLatFactor = $('mobileLatency');
+
+const WB = 100;     // Web bandwidth: 100 Mbps
+const MB = 10;      // Mobile bandwidth: 10 Mbps
+
+function fmt(n) { return Number(n).toLocaleString('ru-RU'); }
+
+function cap(v) { return Math.min(100, Math.max(0, v)); }
+
+function update() {
+  const rps = +rpsSlider.value;
+  const clients = +clientsSlider.value;
+  const dbLat = +dbLatSlider.value;
+  const pWeb = +payloadWeb.value;      // KB
+  const pMobile = +payloadMobile.value; // KB
+  const mobileNet = +mobileLatFactor.value;
+
+  // ── Web Channel ──────────────────────────────────────
+  // Web: high bandwidth, low latency overhead
+  const webRpsPerClient = rps / Math.max(1, clients / 1000);
+  const webPayloadMbit = (pWeb * 8) / 1000; // KB → Mbit
+  const webNetLat = 2 + dbLat * 0.3;         // network + DB
+  const webQueueLat = (rps / 100) * 1.5;     // queueing delay
+  const webLat = webNetLat + webQueueLat;
+
+  const webDataRate = rps * webPayloadMbit; // Mbps
+  const webLoadPct = cap((webDataRate / WB) * 100);
+
+  const webErrBase = webLoadPct > 80 ? (webLoadPct - 80) * 1.2 : 0;
+  const webErrRate = cap(webErrBase + (dbLat > 50 ? (dbLat - 50) * 0.05 : 0));
+
+  const webThroughput = Math.min(WB, webDataRate);
+  const webThroughputPct = cap((webThroughput / WB) * 100);
+
+  const webStatus = webLoadPct >= 80 ? 'critical' : webLoadPct >= 50 ? 'warning' : 'healthy';
+
+  // ── Mobile Channel ───────────────────────────────────
+  // Mobile: limited bandwidth, higher network latency, compression
+  const mobileRpsPerClient = rps / Math.max(1, clients / 1000);
+  const mobilePayloadMbit = (pMobile * 8) / 1000; // KB → Mbit
+  const mobileNetLat = (10 + dbLat * 0.5) * mobileNet / 2; // 4G overhead × factor
+  const mobileQueueLat = (rps / 100) * 3.5;                // queuing worse on mobile
+  const mobileLat = mobileNetLat + mobileQueueLat;
+
+  const mobileDataRate = rps * mobilePayloadMbit; // Mbps
+  const mobileLoadPct = cap((mobileDataRate / MB) * 100);
+
+  const mobileErrBase = mobileLoadPct > 60 ? (mobileLoadPct - 60) * 1.5 : 0;
+  const mobileErrRate = cap(mobileErrBase + (dbLat > 30 ? (dbLat - 30) * 0.1 : 0) + (mobileNet / 5) * 0.5);
+
+  const mobileThroughput = Math.min(MB, mobileDataRate);
+  const mobileThroughputPct = cap((mobileThroughput / MB) * 100);
+
+  const mobileStatus = mobileLoadPct >= 70 ? 'critical' : mobileLoadPct >= 40 ? 'warning' : 'healthy';
+
+  // ── Update Web UI ────────────────────────────────────
+  // Web Latency
+  $('webLatBar').style.width = cap(webLat / 3) + '%';
+  $('webLatVal').textContent = webLat.toFixed(1) + 'ms';
+
+  // Web Load
+  $('webLoadBar').style.width = webLoadPct + '%';
+  $('webLoadBar').style.background = webStatus === 'critical' ? 'var(--red)' : webStatus === 'warning' ? 'var(--yellow)' : 'var(--web-color)';
+  $('webLoadVal').textContent = webLoadPct.toFixed(1) + '%';
+  $('webLoadVal').style.color = webStatus === 'critical' ? 'var(--red)' : webStatus === 'warning' ? 'var(--yellow)' : 'var(--web-color)';
+
+  // Web Errors
+  $('webErrBar').style.width = webErrRate + '%';
+  $('webErrBar').style.background = webErrRate > 10 ? 'var(--red)' : webErrRate > 3 ? 'var(--yellow)' : 'var(--web-color)';
+  $('webErrVal').textContent = webErrRate.toFixed(1) + '%';
+  $('webErrVal').style.color = webErrRate > 10 ? 'var(--red)' : webErrRate > 3 ? 'var(--yellow)' : 'var(--web-color)';
+
+  // Web Throughput
+  $('webThroughputBar').style.width = webThroughputPct + '%';
+  $('webThroughputVal').textContent = webThroughput.toFixed(1) + ' Mbps';
+
+  // Web Status
+  updateStatus('web', webStatus);
+  $('webStatus').className = 'channel-status ' + webStatus;
+  $('webStatusText').textContent = webStatus === 'critical' ? '✕ Перегрузка' : webStatus === 'warning' ? '⚠ На пределе' : '✓ Здоров';
+
+  // ── Update Mobile UI ─────────────────────────────────
+  // Mobile Latency
+  $('mobileLatBar').style.width = cap(mobileLat / 8) + '%';
+  $('mobileLatVal').textContent = mobileLat.toFixed(1) + 'ms';
+
+  // Mobile Load
+  $('mobileLoadBar').style.width = mobileLoadPct + '%';
+  $('mobileLoadBar').style.background = mobileStatus === 'critical' ? 'var(--red)' : mobileStatus === 'warning' ? 'var(--yellow)' : 'var(--mobile-color)';
+  $('mobileLoadVal').textContent = mobileLoadPct.toFixed(1) + '%';
+  $('mobileLoadVal').style.color = mobileStatus === 'critical' ? 'var(--red)' : mobileStatus === 'warning' ? 'var(--yellow)' : 'var(--mobile-color)';
+
+  // Mobile Errors
+  $('mobileErrBar').style.width = mobileErrRate + '%';
+  $('mobileErrBar').style.background = mobileErrRate > 10 ? 'var(--red)' : mobileErrRate > 3 ? 'var(--yellow)' : 'var(--mobile-color)';
+  $('mobileErrVal').textContent = mobileErrRate.toFixed(1) + '%';
+  $('mobileErrVal').style.color = mobileErrRate > 10 ? 'var(--red)' : mobileErrRate > 3 ? 'var(--yellow)' : 'var(--mobile-color)';
+
+  // Mobile Throughput
+  $('mobileThroughputBar').style.width = mobileThroughputPct + '%';
+  $('mobileThroughputVal').textContent = mobileThroughput.toFixed(1) + ' Mbps';
+
+  // Mobile Status
+  $('mobileStatus').className = 'channel-status ' + mobileStatus;
+  $('mobileStatusText').textContent = mobileStatus === 'critical' ? '✕ Перегрузка' : mobileStatus === 'warning' ? '⚠ На пределе' : '✓ Здоров';
+
+  // ── Static info ──────────────────────────────────────
+  $('webBandwidth').textContent = WB + ' Мбит/с';
+  $('webPayload').textContent = pWeb + ' KB';
+  $('mobileBandwidth').textContent = MB + ' Мбит/с';
+  $('mobilePayload').textContent = pMobile + ' KB';
+
+  // ── Comparison Bar ───────────────────────────────────
+  const maxLoad = Math.max(webLoadPct, mobileLoadPct, 1);
+  const wLoadShare = (webLoadPct / maxLoad) * 50;
+  const mLoadShare = (mobileLoadPct / maxLoad) * 50;
+  const fLoadShare = 100 - wLoadShare - mLoadShare;
+  $('compLoadWeb').style.width = wLoadShare + '%';
+  $('compLoadMobile').style.width = mLoadShare + '%';
+  $('compLoadFree').style.width = fLoadShare + '%';
+
+  const maxErr = Math.max(webErrRate, mobileErrRate, 1);
+  const wErrShare = (webErrRate / maxErr) * 50;
+  const mErrShare = (mobileErrRate / maxErr) * 50;
+  const fErrShare = 100 - wErrShare - mErrShare;
+  $('compErrWeb').style.width = wErrShare + '%';
+  $('compErrMobile').style.width = mErrShare + '%';
+  $('compErrFree').style.width = fErrShare + '%';
+
+  const maxLat = Math.max(webLat, mobileLat, 1);
+  const wLatShare = (webLat / maxLat) * 50;
+  const mLatShare = (mobileLat / maxLat) * 50;
+  const fLatShare = 100 - wLatShare - mLatShare;
+  $('compLatWeb').style.width = wLatShare + '%';
+  $('compLatMobile').style.width = mLatShare + '%';
+  $('compLatFree').style.width = fLatShare + '%';
+
+  $('compLoadVal').textContent = (webLoadPct + mobileLoadPct).toFixed(0) + '%';
+  $('compErrVal').textContent = (webErrRate + mobileErrRate).toFixed(1) + '%';
+  $('compLatVal').textContent = Math.max(webLat, mobileLat).toFixed(0) + 'ms';
+
+  // ── Overall indicator ────────────────────────────────
+  const worst = webStatus === 'critical' || mobileStatus === 'critical' ? 'critical'
+              : webStatus === 'warning' || mobileStatus === 'warning' ? 'warning' : 'healthy';
+  $('statusIndicator').innerHTML = worst === 'critical' ? '🔴 Критично'
+                                 : worst === 'warning' ? '🟡 На пределе'
+                                 : '🟢 Работает';
+}
+
+function updateStatus(prefix, status) {
+  const el = $(prefix + 'Status');
+  el.className = 'channel-status ' + status;
+}
+
+// ── Bind sliders ───────────────────────────────────────
+rpsSlider.addEventListener('input', () => { $('rpsVal').textContent = rpsSlider.value; update(); });
+clientsSlider.addEventListener('input', () => { $('clientsVal').textContent = fmt(clientsSlider.value); update(); });
+dbLatSlider.addEventListener('input', () => { $('dbLatencyVal').textContent = dbLatSlider.value; update(); });
+payloadWeb.addEventListener('input', () => { $('payloadWebVal').textContent = payloadWeb.value; update(); });
+payloadMobile.addEventListener('input', () => { $('payloadMobileVal').textContent = payloadMobile.value; update(); });
+mobileLatFactor.addEventListener('input', () => { $('mobileLatencyVal').textContent = mobileLatFactor.value; update(); });
+
+// ── Init ───────────────────────────────────────────────
+update();
+</script>
+</body>
+</html>
