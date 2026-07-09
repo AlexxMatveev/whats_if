@@ -26,10 +26,24 @@ class NormativeEntry(BaseModel):
     error_slo_pct: float = 1.0
 
 
+class ComponentCapacities(BaseModel):
+    max_clients: int = 500_000
+    lb_max_rps: int = 5_000
+    gw_max_rps: int = 3_000
+    rps_per_container_max: int = 80
+    rps_per_container_normal: int = 25
+    db_latency_normal_ms: float = 5.0
+    db_latency_danger_ms: float = 50.0
+    container_cpu_normal: float = 25.0
+    warn_pct: float = 50.0
+    crit_pct: float = 80.0
+
+
 class AnalysisRequest(BaseModel):
     config: SystemConfig
     scenario: Scenario
     normatives: Optional[List[NormativeEntry]] = None
+    capacities: Optional[ComponentCapacities] = None
 
 
 class ComponentMetrics(BaseModel):

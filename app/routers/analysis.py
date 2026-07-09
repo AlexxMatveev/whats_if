@@ -24,7 +24,7 @@ def get_scenarios():
 
 @router.post("/analyze")
 def run_analysis(req: AnalysisRequest):
-    result = analyze(req.config, req.scenario)
+    result = analyze(req.config, req.scenario, capacities=req.capacities)
     if req.normatives:
         result.normatives = req.normatives
         # Add SLO-based recommendations

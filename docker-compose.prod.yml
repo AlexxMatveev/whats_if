@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  whats-if:
+    build: .
+    container_name: whats-if
+    expose:
+      - "8000"
+    volumes:
+      - ./examples:/app/examples
+      - ./BI_3049.drawio:/app/BI_3049.drawio:ro
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - whats-if-net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: whats-if-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - whats-if
+    restart: unless-stopped
+    networks:
+      - whats-if-net
+
+networks:
+  whats-if-net:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

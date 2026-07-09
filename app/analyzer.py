@@ -1,8 +1,8 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from app.models import (
     ComponentMetrics, EdgeInfo, SystemConfig, Scenario,
-    AnalysisResult, LimitInfo, ScenarioExplanation,
+    AnalysisResult, LimitInfo, ScenarioExplanation, ComponentCapacities,
 )
 
 APP_NAMES = [
@@ -106,7 +106,31 @@ def _propagate_degradation(components: List[ComponentMetrics], edges: List[EdgeI
                 break
 
 
-def analyze(config: SystemConfig, scenario: Scenario) -> AnalysisResult:
+def analyze(config: SystemConfig, scenario: Scenario, capacities: Optional[ComponentCapacities] = None) -> AnalysisResult:
+    _c = capacities or ComponentCapacities()
+
+    MAX_CLIENTS = _c.max_clients
+    LB_MAX_RPS = _c.lb_max_rps
+    GW_MAX_RPS = _c.gw_max_rps
+    RPS_PER_CONTAINER_MAX = _c.rps_per_container_max
+    RPS_PER_CONTAINER_NORMAL = _c.rps_per_container_normal
+    DB_LATENCY_NORMAL = _c.db_latency_normal_ms
+    DB_LATENCY_DANGER = _c.db_latency_danger_ms
+    CONTAINER_CPU_NORMAL = _c.container_cpu_normal
+    WARN_PCT = _c.warn_pct
+    CRIT_PCT = _c.crit_pct
+
+    # Local helpers capturing the overridden thresholds
+    def _status(load: float) -> str:
+        if load >= CRIT_PCT:
+            return "critical"
+        if load >= WARN_PCT:
+            return "warning"
+        return "healthy"
+
+    def _cap_load(load: float) -> float:
+        return round(min(100, max(0, load)), 1)
+
     sname = scenario.name
     sp = scenario.params
 

@@ -8,6 +8,27 @@ import subprocess
 import time
 import threading
 from typing import List, Optional
+from urllib.parse import urlparse
+
+
+ALLOWED_HOSTS_PREFIXES = [
+    "127.", "10.", "172.16.", "172.17.", "172.18.", "172.19.",
+    "172.20.", "172.21.", "172.22.", "172.23.", "172.24.",
+    "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
+    "172.30.", "172.31.", "192.168.",
+    "localhost", "0.0.0.0",
+]
+
+
+def validate_target_url(url: str) -> str:
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    if not any(host.startswith(p) for p in ALLOWED_HOSTS_PREFIXES):
+        raise ValueError(
+            f"Target URL '{url}' is not allowed. "
+            "Only private/internal network targets are permitted."
+        )
+    return url
 
 
 def generate_locustfile(endpoints: List[str], method: str = "GET") -> str:
@@ -42,6 +63,7 @@ def run_locust_test(
     timeout_sec: int = 120,
 ) -> dict:
     """Run locust in headless mode, return per-endpoint stats dict."""
+    validate_target_url(target_url)
 
     tmpdir = tempfile.mkdtemp(prefix="locust_")
     locustfile_path = os.path.join(tmpdir, "locustfile.py")

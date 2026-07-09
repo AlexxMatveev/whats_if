@@ -56,6 +56,56 @@
     </div>
 
     <div class="panel-section">
+      <div class="capacities-toggle">
+        <label class="capacities-toggle-label">
+          <input type="checkbox" id="capacitiesCheck"> 📊 Симуляция по параметрам контейнеров
+        </label>
+      </div>
+      <div id="capacitiesConfig" style="display:none;margin-top:8px">
+        <div class="field">
+          <label for="capClients">Макс. клиентов</label>
+          <input type="number" id="capClients" class="cap-input" value="500000" min="1000" step="10000">
+        </div>
+        <div class="field">
+          <label for="capLbRps">Макс. RPS Load Balancer</label>
+          <input type="number" id="capLbRps" class="cap-input" value="5000" min="100" step="100">
+        </div>
+        <div class="field">
+          <label for="capGwRps">Макс. RPS Gateway</label>
+          <input type="number" id="capGwRps" class="cap-input" value="3000" min="100" step="100">
+        </div>
+        <div class="field">
+          <label for="capContMaxRps">Макс. RPS на контейнер</label>
+          <input type="number" id="capContMaxRps" class="cap-input" value="80" min="1" step="5">
+        </div>
+        <div class="field">
+          <label for="capContNormRps">Норма RPS на контейнер</label>
+          <input type="number" id="capContNormRps" class="cap-input" value="25" min="1" step="1">
+        </div>
+        <div class="field">
+          <label for="capDbLatNorm">Норма задержки БД (ms)</label>
+          <input type="number" id="capDbLatNorm" class="cap-input" value="5" min="1" step="1">
+        </div>
+        <div class="field">
+          <label for="capDbLatDanger">Критическая задержка БД (ms)</label>
+          <input type="number" id="capDbLatDanger" class="cap-input" value="50" min="10" step="5">
+        </div>
+        <div class="field">
+          <label for="capCpuNorm">Норма CPU контейнера (%)</label>
+          <input type="number" id="capCpuNorm" class="cap-input" value="25" min="1" max="100" step="1">
+        </div>
+        <div class="field">
+          <label for="capWarnPct">Порог предупреждения (%)</label>
+          <input type="number" id="capWarnPct" class="cap-input" value="50" min="1" max="100" step="5">
+        </div>
+        <div class="field">
+          <label for="capCritPct">Критический порог (%)</label>
+          <input type="number" id="capCritPct" class="cap-input" value="80" min="1" max="100" step="5">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
       <h3>🧪 Сценарий</h3>
       <p class="section-hint">Выберите, что проверить:</p>
       <div id="scenarios" class="scenario-list"></div>
@@ -220,10 +270,25 @@
     <div id="tabArchitecture" class="tab-panel">
       <div class="top-bar">
         <div class="top-bar-left">
-          <span class="scenario-label">🏗️ Архитектура системы (BI_3049)</span>
+          <span class="scenario-label" id="archTitle">🏗️ Архитектура системы (BI_3049)</span>
         </div>
         <div class="last-updated" id="archUpdated"></div>
         <button class="btn-primary" id="archAnalyzeAllBtn" style="font-size:12px;padding:4px 10px;margin-left:8px">🚀 Анализировать всё</button>
+      </div>
+      <div style="padding:8px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--bg-card)">
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--text-secondary);cursor:pointer;padding:4px 0">
+          <input type="file" id="archFileInput" accept=".drawio,.yaml,.yml" style="display:none">
+          <span style="font-size:14px">📂</span> Загрузить drawio / YAML
+        </label>
+        <span style="font-size:10px;color:var(--text-muted)" id="archFileName">BI_3049.drawio</span>
+        <button id="archResetBtn" style="font-size:10px;padding:2px 8px;background:transparent;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer">✕ Сбросить</button>
+      </div>
+      <div style="padding:6px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--bg-card);flex-wrap:wrap">
+        <span style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase">⚡ Реальный тест:</span>
+        <input type="text" id="archLocustUrl" placeholder="Target URL" value="http://localhost:8000" style="width:140px;padding:3px 6px;font-size:11px;background:var(--bg-main);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);outline:none">
+        <input type="number" id="archLocustUsers" placeholder="Users" value="5" min="1" max="100" style="width:60px;padding:3px 6px;font-size:11px;background:var(--bg-main);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);outline:none">
+        <input type="number" id="archLocustDuration" placeholder="Sec" value="10" min="5" max="300" style="width:55px;padding:3px 6px;font-size:11px;background:var(--bg-main);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);outline:none">
+        <button id="archLocustRunBtn" style="font-size:10px;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer">▶ Запустить</button>
       </div>
       <div class="graph-container" style="position:relative">
         <div id="archGraph"></div>

@@ -503,6 +503,30 @@ $('manifestFiles').addEventListener('change', async (e) => {
   }
 });
 
+// ── Capacities toggle ──
+let useCapacities = false;
+
+$('capacitiesCheck').addEventListener('change', () => {
+  useCapacities = $('capacitiesCheck').checked;
+  $('capacitiesConfig').style.display = useCapacities ? 'block' : 'none';
+});
+
+function readCapacities() {
+  if (!useCapacities) return undefined;
+  return {
+    max_clients: parseInt($('capClients').value) || 500000,
+    lb_max_rps: parseInt($('capLbRps').value) || 5000,
+    gw_max_rps: parseInt($('capGwRps').value) || 3000,
+    rps_per_container_max: parseInt($('capContMaxRps').value) || 80,
+    rps_per_container_normal: parseInt($('capContNormRps').value) || 25,
+    db_latency_normal_ms: parseFloat($('capDbLatNorm').value) || 5.0,
+    db_latency_danger_ms: parseFloat($('capDbLatDanger').value) || 50.0,
+    container_cpu_normal: parseFloat($('capCpuNorm').value) || 25.0,
+    warn_pct: parseFloat($('capWarnPct').value) || 50.0,
+    crit_pct: parseFloat($('capCritPct').value) || 80.0,
+  };
+}
+
 async function analyze() {
   const btn = $('analyzeBtn');
   btn.textContent = '⏳ Выполнение...';
@@ -559,23 +583,24 @@ async function analyze() {
         };
       }
 
+      const capacities = readCapacities();
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, scenario, normatives: manifestNormatives || undefined }),
+        body: JSON.stringify({ config, scenario, normatives: manifestNormatives || undefined, capacities }),
       });
       const result = await res.json();
       currentResult = result;
       updateUI(result);
       if (archData) {
         try {
-          const syncRes = await fetch('/api/architecture/analyze', {
+          const syncRes = await fetch('/api/architecture/analyze-topology', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              component_id: '',
               scenario: scenario.name,
               params: scenario.params,
+              per_container_capacities: perContainerCapacities,
             }),
           });
           const archSync = await syncRes.json();
@@ -712,16 +737,64 @@ let selectedArchNode = null;
 let archSim = null;
 let archResult = null;
 let archNodeStatuses = null;
+let perContainerCapacities = {};  // { containerId: { rps_per_container_max, rps_per_container_normal, container_cpu_normal } }
 
 async function loadArchitecture() {
   try {
     const res = await fetch('/api/architecture/view');
     archData = await res.json();
     renderArchitecture(archData, archNodeStatuses);
+    updateArchFileInfo();
   } catch (e) {
     console.error('Failed to load architecture:', e);
   }
 }
+
+async function updateArchFileInfo() {
+  try {
+    const res = await fetch('/api/architecture/uploaded');
+    const info = await res.json();
+    $('archFileName').textContent = info.name;
+    $('archTitle').textContent = '🏗️ Архитектура системы (' + info.name + ')';
+  } catch (_) {}
+}
+
+$('archFileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch('/api/architecture/upload', { method: 'POST', body: formData });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed');
+    const data = await res.json();
+    archData = data.view;
+    archNodeStatuses = null;
+    archResult = null;
+    renderArchitecture(archData, null);
+    $('archFileName').textContent = data.name;
+    $('archTitle').textContent = '🏗️ Архитектура системы (' + data.name + ')';
+    $('archUpdated').textContent = '✅ Загружено: ' + data.name;
+  } catch (err) {
+    console.error(err);
+    alert('Ошибка загрузки: ' + err.message);
+  }
+  e.target.value = '';
+});
+
+$('archResetBtn').addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/architecture/reset', { method: 'POST' });
+    if (!res.ok) throw new Error('Reset failed');
+    archData = null;
+    archNodeStatuses = null;
+    archResult = null;
+    await loadArchitecture();
+    $('archUpdated').textContent = '🔄 Сброшено на BI_3049.drawio';
+  } catch (err) {
+    console.error(err);
+  }
+});
 
 function getArchGroups(data) {
   // Build groups: systemBoundary → child nodes
@@ -1076,7 +1149,7 @@ function renderArchitecture(data, nodeStatuses) {
   }
 }
 
-function showArchInfo(d, data) {
+async function showArchInfo(d, data) {
   selectedArchNode = d;
   const comp = data.components.find(c => c.id === d.id);
   if (!comp) return;
@@ -1087,6 +1160,13 @@ function showArchInfo(d, data) {
     return c ? c.name : cid;
   }).join(', ');
 
+  // Load saved URLs
+  let savedUrls = {};
+  try {
+    const urlRes = await fetch('/api/architecture/urls');
+    savedUrls = (await urlRes.json()).urls || {};
+  } catch (_) {}
+
   $('archInfoTitle').textContent = comp.name;
   let html = '<dl>';
   html += `<dt>Тип</dt><dd>${comp.type}</dd>`;
@@ -1094,13 +1174,75 @@ function showArchInfo(d, data) {
   if (childrenNames) html += `<dt>Включает</dt><dd>${childrenNames}</dd>`;
   html += `<dt>Связей</dt><dd>${conns.length}</dd>`;
   html += '</dl>';
+
+  // Real test results for this component
+  if (archRealResults && archRealResults[comp.id]) {
+    const rr = archRealResults[comp.id];
+    html += '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">';
+    html += '<div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">⚡ Реальный тест</div>';
+    html += '<dl style="font-size:11px">';
+    if (rr.avg_latency_ms !== undefined) html += `<dt>Latency</dt><dd>${rr.avg_latency_ms} ms</dd>`;
+    if (rr.error_rate !== undefined) html += `<dt>Ошибки</dt><dd>${rr.error_rate}%</dd>`;
+    if (rr.rps !== undefined) html += `<dt>RPS</dt><dd>${rr.rps}</dd>`;
+    html += `<dt>Статус</dt><dd style="color:${rr.status === 'critical' ? 'var(--red)' : rr.status === 'warning' ? 'var(--yellow)' : 'var(--green)'}">${rr.status}</dd>`;
+    html += '</dl></div>';
+  }
+
+  // Per-container settings
+  if (comp.type === 'container' || comp.type === 'external') {
+    const cap = perContainerCapacities[comp.id] || {};
+    html += '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">';
+    html += '<div style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">⚙️ Параметры контейнера</div>';
+    html += '<div class="field"><label>Макс. RPS</label>';
+    html += `<input type="number" id="capRpsMax_${comp.id}" class="cap-input" value="${cap.rps_per_container_max || 80}" min="1" step="5"></div>`;
+    html += '<div class="field"><label>Норма RPS</label>';
+    html += `<input type="number" id="capRpsNorm_${comp.id}" class="cap-input" value="${cap.rps_per_container_normal || 25}" min="1" step="1"></div>`;
+    html += '<div class="field"><label>Норма CPU (%)</label>';
+    html += `<input type="number" id="capCpu_${comp.id}" class="cap-input" value="${cap.container_cpu_normal || 25}" min="1" max="100" step="1"></div>`;
+    html += '<div class="field"><label>Endpoint для реального теста</label>';
+    html += `<input type="text" id="archUrl_${comp.id}" class="cap-input" value="${savedUrls[comp.id] || ''}" placeholder="/api/v1/health"></div>`;
+    html += `<button id="saveArchUrl_${comp.id}" style="margin-top:4px;font-size:10px;padding:2px 8px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer">💾 Сохранить URL</button>`;
+    html += '</div>';
+  }
+
   $('archInfoBody').innerHTML = html;
-  $('archAnalyzeBtn').textContent = '⏳ Анализ...';
-  $('archAnalyzeBtn').disabled = true;
+  $('archAnalyzeBtn').textContent = '📊 Анализировать';
+  $('archAnalyzeBtn').disabled = false;
   $('archInfo').style.display = 'block';
 
-  // Auto-analyze this component
-  setTimeout(() => runArchAnalysis(d.id, data), 100);
+  // Wire save URL button
+  if (comp.type === 'container' || comp.type === 'external') {
+    const saveBtn = document.getElementById(`saveArchUrl_${comp.id}`);
+    if (saveBtn) {
+      saveBtn.addEventListener('click', async () => {
+        const urlInput = document.getElementById(`archUrl_${comp.id}`);
+        if (!urlInput) return;
+        const urls = { [comp.id]: urlInput.value };
+        try {
+          await fetch('/api/architecture/save-urls', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ component_urls: urls }),
+          });
+          saveBtn.textContent = '✅ Сохранено';
+          setTimeout(() => { saveBtn.textContent = '💾 Сохранить URL'; }, 1500);
+        } catch (e) {
+          saveBtn.textContent = '❌ Ошибка';
+        }
+      });
+    }
+  }
+}
+
+function readArchPerContainerCaps(componentId) {
+  const cap = {};
+  const maxRps = document.getElementById(`capRpsMax_${componentId}`);
+  const normRps = document.getElementById(`capRpsNorm_${componentId}`);
+  const cpu = document.getElementById(`capCpu_${componentId}`);
+  if (maxRps) cap.rps_per_container_max = parseInt(maxRps.value) || 80;
+  if (normRps) cap.rps_per_container_normal = parseInt(normRps.value) || 25;
+  if (cpu) cap.container_cpu_normal = parseFloat(cpu.value) || 25;
+  return Object.keys(cap).length ? cap : undefined;
 }
 
 async function runArchAnalysis(componentId, data) {
@@ -1108,13 +1250,20 @@ async function runArchAnalysis(componentId, data) {
     const scenarioName = selectedScenario || 'baseline';
     const scenarioParams = scenariosData[scenarioName] ? { ...scenariosData[scenarioName].params } : {};
 
-    const res = await fetch('/api/architecture/analyze', {
+    // Collect per-container capacities from UI
+    const caps = {};
+    if (componentId) {
+      const cap = readArchPerContainerCaps(componentId);
+      if (cap) caps[componentId] = cap;
+    }
+
+    const res = await fetch('/api/architecture/analyze-topology', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        component_id: componentId,
         scenario: scenarioName,
         params: scenarioParams,
+        per_container_capacities: caps,
       }),
     });
     const result = await res.json();
@@ -1122,11 +1271,15 @@ async function runArchAnalysis(componentId, data) {
 
     // Update analysis tab with results
     currentResult = result.analysis;
-    updateUI(result.analysis);
+    if (result.analysis && result.analysis.summary) {
+      updateUI(result.analysis);
+    }
 
     // Re-render architecture with status overlay
-    archNodeStatuses = result.node_statuses;
-    renderArchitecture(data, archNodeStatuses);
+    if (result.node_statuses) {
+      archNodeStatuses = result.node_statuses;
+      renderArchitecture(data, archNodeStatuses);
+    }
 
     $('archAnalyzeBtn').textContent = '📊 Показать анализ';
     $('archAnalyzeBtn').disabled = false;
@@ -1178,13 +1331,13 @@ $('archAnalyzeAllBtn').addEventListener('click', async () => {
   try {
     const scenarioName = selectedScenario || 'baseline';
     const scenarioParams = scenariosData[scenarioName] ? { ...scenariosData[scenarioName].params } : {};
-    const res = await fetch('/api/architecture/analyze', {
+    const res = await fetch('/api/architecture/analyze-topology', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        component_id: '',
         scenario: scenarioName,
         params: scenarioParams,
+        per_container_capacities: perContainerCapacities,
       }),
     });
     const result = await res.json();
@@ -1196,6 +1349,75 @@ $('archAnalyzeAllBtn').addEventListener('click', async () => {
     console.error(e);
   } finally {
     btn.textContent = '🚀 Анализировать всё';
+    btn.disabled = false;
+  }
+});
+
+// ── Architecture real load test (Locust) ──
+let archRealResults = null;
+
+$('archLocustRunBtn').addEventListener('click', async () => {
+  if (!archData) return;
+  const btn = $('archLocustRunBtn');
+  const origText = btn.textContent;
+  btn.textContent = '⏳ Тест...';
+  btn.disabled = true;
+
+  // Load saved URLs
+  let savedUrls = {};
+  try {
+    const urlRes = await fetch('/api/architecture/urls');
+    savedUrls = (await urlRes.json()).urls || {};
+  } catch (_) {}
+
+  const targetUrl = $('archLocustUrl').value || 'http://localhost:8000';
+  const numUsers = parseInt($('archLocustUsers').value) || 5;
+  const duration = parseInt($('archLocustDuration').value) || 10;
+
+  // Only test components that have a URL configured
+  const componentEndpoints = {};
+  const containers = archData.components.filter(c => c.type === 'container' || c.type === 'external');
+  containers.forEach(c => {
+    if (savedUrls[c.id]) {
+      componentEndpoints[c.id] = savedUrls[c.id];
+    }
+  });
+
+  if (!Object.keys(componentEndpoints).length) {
+    alert('Нет компонентов с настроенными endpoint\'ами. Кликните на компонент и укажите URL.');
+    btn.textContent = origText;
+    btn.disabled = false;
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/architecture/locust-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target_url: targetUrl,
+        num_users: numUsers,
+        duration_sec: duration,
+        component_endpoints: componentEndpoints,
+      }),
+    });
+    const result = await res.json();
+    archRealResults = result.component_results || {};
+    if (result.node_statuses) {
+      archNodeStatuses = result.node_statuses;
+      renderArchitecture(archData, archNodeStatuses);
+    }
+    // Show summary
+    const entries = Object.entries(archRealResults);
+    const okCount = entries.filter(([, v]) => v.status === 'healthy').length;
+    const warnCount = entries.filter(([, v]) => v.status === 'warning').length;
+    const critCount = entries.filter(([, v]) => v.status === 'critical').length;
+    $('archUpdated').textContent = `⚡ Реальный тест: ✅${okCount} ⚠${warnCount} ❌${critCount} (${new Date().toLocaleTimeString('ru-RU')})`;
+  } catch (e) {
+    console.error(e);
+    alert('Ошибка теста: ' + e.message);
+  } finally {
+    btn.textContent = origText;
     btn.disabled = false;
   }
 });

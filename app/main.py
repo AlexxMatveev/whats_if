@@ -8,6 +8,7 @@ from app.routers.diagram import router as diagram_router
 from app.routers.architecture import router as architecture_router
 from app.routers.locust_test import router as locust_router
 from app.routers.manifest import router as manifest_router
+from app.auth import ApiKeyMiddleware
 
 app = FastAPI(
     title="Whats If — Анализ сценариев",
@@ -22,6 +23,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(ApiKeyMiddleware)
 
 app.include_router(analysis_router)
 app.include_router(diagram_router)

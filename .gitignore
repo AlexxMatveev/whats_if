@@ -24,6 +24,12 @@ Thumbs.db
 
 # Drawio
 *.drawio
+!WhatsIf_C4_Container_Diagram.drawio
+!whats_if_architecture.drawio
+
+# Temp / env
+CLOUDFLARED_URL.txt
+url.txt
 
 # Test
 .coverage
